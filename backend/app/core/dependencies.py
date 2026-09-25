@@ -21,7 +21,10 @@ from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.logging import tenant_id_ctx
 from app.core.resources import Resources
 from app.core.security import Permission, Role, decode_token, has_permission
+from app.services.audit_service import RequestMeta
+from app.services.auth_service import AuthService
 from app.services.health_service import HealthService
+from app.services.user_service import UserService
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -80,6 +83,32 @@ def require_permission(permission: Permission) -> Callable[..., CurrentUser]:
     return _checker
 
 
+def get_request_meta(request: Request) -> RequestMeta:
+    return RequestMeta.from_client_host(request.client.host if request.client else None)
+
+
+def get_auth_service(
+    resources: Annotated[Resources, Depends(get_resources)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AuthService:
+    # Same `get_settings` as `get_current_user`, so tokens are signed and
+    # verified with the same key.
+    return AuthService(session, resources.redis, settings)
+
+
+def get_user_service(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> UserService:
+    """Scoped to the caller's tenant from the signed token."""
+    return UserService(session, user.tenant_id)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+RequestMetaDep = Annotated[RequestMeta, Depends(get_request_meta)]
+AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+UserManagerDep = Annotated[CurrentUser, Depends(require_permission(Permission.USER_MANAGE))]

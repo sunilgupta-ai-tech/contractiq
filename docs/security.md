@@ -12,4 +12,13 @@ Implemented in Phase 1:
 * Local storage blocks path traversal.
 * Prompt-injection: retrieved text wrapped in nonce-tagged untrusted blocks (documents cannot forge the closing tag) plus heuristic detection for flagging.
 
-Planned: rate limiting (Redis), upload magic-byte checks and AV scanning (Phase 3), tool authorization in the agent registry, output/citation validation (Phase 11), httpOnly-cookie sessions via a BFF route (Phase 2).
+Implemented in Phase 2:
+
+* Register / login / refresh endpoints. Passwords: at least 12 characters, at most 72 bytes (bcrypt's limit — rejected, never truncated).
+* Login failures are indistinguishable: unknown email, wrong password and disabled account/organization return the same 401, and unknown emails still pay for a bcrypt comparison so timing doesn't reveal which emails exist.
+* Refresh tokens are single-use: each `jti` is claimed atomically in Redis (key expires with the token). A replay returns 401. If Redis is unreachable, refresh fails closed with 503.
+* Refresh re-reads the user from Postgres, so role changes and deactivation take effect within one access-token lifetime (30 min by default). Access tokens themselves stay stateless.
+* User management is ADMIN-only and tenant-scoped; another organization's user IDs return `NOT_FOUND`. ADMINs cannot change their own role or active status (prevents locking an organization out).
+* Audit log entries for `auth.register`, `auth.login`, `auth.login_failed`, `user.create`, `user.update` — IDs, field names, role/status values and client IP only; never passwords, tokens or names.
+
+Planned: rate limiting, including login throttling (Redis, Phase 11); upload magic-byte checks and AV scanning (Phase 3); tool authorization in the agent registry; output/citation validation (Phase 11); httpOnly-cookie sessions via a frontend BFF route (the frontend still holds the access token in memory).

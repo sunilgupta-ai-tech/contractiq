@@ -9,8 +9,12 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 |---|---|---|---|
 | GET | `/health` | 1 | live — liveness |
 | GET | `/ready` | 1 | live — 200 ready/degraded, 503 not_ready |
-| POST | `/auth/register`, `/auth/login`, `/auth/refresh` | 2 | 501 |
-| GET | `/users/me`, `/users` | 2 | 501 |
+| POST | `/auth/register` | 2 | live — new organization + its first ADMIN; returns a token pair (201) |
+| POST | `/auth/login` | 2 | live — token pair; one generic 401 for every failure |
+| POST | `/auth/refresh` | 2 | live — single-use refresh token → new pair; role re-read from the DB |
+| GET | `/users/me` | 2 | live — any authenticated user |
+| GET, POST | `/users` | 2 | live — ADMIN only (`user:manage`), own organization only |
+| PATCH | `/users/{id}` | 2 | live — ADMIN only; name, role, active status (not your own role/status) |
 | POST | `/documents/upload` | 3 | 501 |
 | GET | `/documents`, `/documents/{id}`, `/documents/{id}/status` | 3 | 501 |
 | DELETE | `/documents/{id}` | 3 | 501 |

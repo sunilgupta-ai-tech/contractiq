@@ -3,7 +3,7 @@
 **Enterprise multimodal contract intelligence & agentic RAG platform.**
 Upload contracts (digital or scanned), ask questions across them, compare versions, and review risk — with every answer cited to page, section, clause and version.
 
-> Status: **Phase 1 — Foundation complete.** Monorepo, FastAPI, PostgreSQL, Redis, Qdrant, worker, Docker, configuration, health checks, logging, full database schema, and the complete designed frontend. Later-phase API endpoints are registered (visible in OpenAPI) and return `501 NOT_IMPLEMENTED` with their phase number.
+> Status: **Phase 2 — Authentication complete.** Phase 1 delivered the monorepo, FastAPI, PostgreSQL, Redis, Qdrant, worker, Docker, configuration, health checks, logging, full database schema, and the complete designed frontend. Phase 2 adds registration, login, single-use refresh tokens, RBAC-protected user management and tenant-scoped audit logging (see [`docs/security.md`](docs/security.md)). Later-phase API endpoints are registered (visible in OpenAPI) and return `501 NOT_IMPLEMENTED` with their phase number.
 
 ---
 
