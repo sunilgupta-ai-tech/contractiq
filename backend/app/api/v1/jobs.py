@@ -1,23 +1,24 @@
-"""
-Background processing jobs.
-
-Implementation lands in Phase 3. The routes are registered now so the
-API contract is visible in OpenAPI and the frontend can integrate against it.
-Route handlers stay thin: validation in schemas, logic in services.
-"""
+"""Background processing jobs (read-only; jobs are created by uploads)."""
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter
 
-from app.core.exceptions import NotImplementedYetError
+from app.core.dependencies import DocumentReaderDep, DocumentServiceDep
+from app.schemas.common import ApiResponse
+from app.schemas.document import JobOut
 
 router = APIRouter(tags=["jobs"])
-PHASE = 3
 
 
 @router.get(
-    "/jobs/{job_id}", summary="Get a processing job's status and stage timings", status_code=501
+    "/jobs/{job_id}",
+    summary="Get a processing job's status and stage timings",
+    response_model=ApiResponse[JobOut],
 )
-async def get_jobs_job_id(job_id: str) -> None:
-    raise NotImplementedYetError("Get a processing job's status and stage timings", PHASE)
+async def get_job(
+    _: DocumentReaderDep, job_id: uuid.UUID, service: DocumentServiceDep
+) -> ApiResponse[JobOut]:
+    return ApiResponse(data=await service.get_job(job_id))

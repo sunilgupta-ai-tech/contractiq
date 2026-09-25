@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 from app.core.logging import get_logger
 from app.core.resources import Resources
+from app.queue import QUEUE_NAME
 from app.schemas.health import DependencyHealth, ReadinessReport
 
 logger = get_logger(__name__)
@@ -30,7 +31,7 @@ class Probe:
     critical: bool = True  # non-critical failures degrade, not fail, readiness
 
 
-WORKER_HEALTH_KEY = "contractiq:documents:health-check"  # written by arq every 30s
+WORKER_HEALTH_KEY = f"{QUEUE_NAME}:health-check"  # written by arq every 30s
 
 
 async def _worker_heartbeat(resources: Resources) -> None:

@@ -17,7 +17,7 @@ from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import RequestContextMiddleware
+from app.core.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
 from app.core.resources import Resources
 
 logger = get_logger(__name__)
@@ -52,7 +52,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=None if settings.is_production else "/openapi.json",
     )
 
-    # Order matters: the outermost middleware is added last.
+    # Order matters: the outermost middleware is added last. The body limit
+    # sits inside CORS so a browser can read its 413 response.
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        # Headroom for multipart boundaries and form fields around the file.
+        max_bytes=settings.max_upload_size_bytes + 1024 * 1024,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

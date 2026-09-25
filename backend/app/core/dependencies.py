@@ -23,6 +23,7 @@ from app.core.resources import Resources
 from app.core.security import Permission, Role, decode_token, has_permission
 from app.services.audit_service import RequestMeta
 from app.services.auth_service import AuthService
+from app.services.document_service import DocumentService
 from app.services.health_service import HealthService
 from app.services.user_service import UserService
 
@@ -105,6 +106,15 @@ def get_user_service(
     return UserService(session, user.tenant_id)
 
 
+def get_document_service(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    resources: Annotated[Resources, Depends(get_resources)],
+) -> DocumentService:
+    """Scoped to the caller's tenant from the signed token."""
+    return DocumentService(session, user.tenant_id, resources)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
@@ -112,3 +122,9 @@ RequestMetaDep = Annotated[RequestMeta, Depends(get_request_meta)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 UserManagerDep = Annotated[CurrentUser, Depends(require_permission(Permission.USER_MANAGE))]
+DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
+DocumentReaderDep = Annotated[CurrentUser, Depends(require_permission(Permission.DOCUMENT_READ))]
+DocumentUploaderDep = Annotated[
+    CurrentUser, Depends(require_permission(Permission.DOCUMENT_UPLOAD))
+]
+DocumentDeleterDep = Annotated[CurrentUser, Depends(require_permission(Permission.DOCUMENT_DELETE))]

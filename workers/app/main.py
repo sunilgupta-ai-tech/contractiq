@@ -17,6 +17,7 @@ from arq.connections import RedisSettings
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.resources import Resources
+from app.queue import QUEUE_NAME
 
 from .tasks.document_processing import process_document
 from .tasks.embedding import reembed_tenant
@@ -25,8 +26,6 @@ from .tasks.indexing import delete_document_vectors
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_json)
 logger = get_logger("contractiq.worker")
-
-QUEUE_NAME = "contractiq:documents"
 
 
 async def startup(ctx: dict[str, Any]) -> None:

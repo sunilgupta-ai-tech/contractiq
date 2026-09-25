@@ -15,10 +15,11 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | GET | `/users/me` | 2 | live — any authenticated user |
 | GET, POST | `/users` | 2 | live — ADMIN only (`user:manage`), own organization only |
 | PATCH | `/users/{id}` | 2 | live — ADMIN only; name, role, active status (not your own role/status) |
-| POST | `/documents/upload` | 3 | 501 |
-| GET | `/documents`, `/documents/{id}`, `/documents/{id}/status` | 3 | 501 |
-| DELETE | `/documents/{id}` | 3 | 501 |
-| GET | `/jobs/{id}` | 3 | 501 |
+| POST | `/documents/upload` | 3 | live — multipart `file` (+ optional `title`, `contract_type`, `counterparty`, `document_id` for a new version, `version_label`); 202 with document, version and job. ADMIN, LEGAL_MANAGER, ANALYST |
+| GET | `/documents` | 3 | live — paginated; `status`, `contract_type`, `q` (title/counterparty search) |
+| GET | `/documents/{id}`, `/documents/{id}/status` | 3 | live — detail with all versions; processing progress of the latest version |
+| DELETE | `/documents/{id}` | 3 | live — 204; removes vectors, rows and files. ADMIN, LEGAL_MANAGER |
+| GET | `/jobs/{id}` | 3 | live — job status, attempts, per-stage timings |
 | POST | `/query` | 7 | 501 |
 | POST | `/contracts/summarize`, `/contracts/extract-clauses`, `/contracts/compare`, `/contracts/risk-analysis`, `/contracts/portfolio-summary` | 10 | 501 |
 

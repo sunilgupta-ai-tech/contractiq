@@ -7,6 +7,7 @@ buffer streaming responses — the query endpoint will stream tokens later.
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 
@@ -25,6 +26,51 @@ _SECURITY_HEADERS = {
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=()",
 }
+
+
+class BodySizeLimitMiddleware:
+    """Reject requests whose declared Content-Length exceeds `max_bytes`
+    before the body is read.
+
+    FastAPI parses multipart forms before the route runs, so without this an
+    oversized upload would be received in full just to be rejected. Requests
+    without a Content-Length (chunked) are still capped by the route's own
+    streaming size check, and the load balancer should enforce a limit too.
+    """
+
+    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            declared = dict(scope["headers"]).get(b"content-length")
+            if declared and declared.isdigit() and int(declared) > self.max_bytes:
+                body = json.dumps(
+                    {
+                        "success": False,
+                        "error": {
+                            "code": "FILE_TOO_LARGE",
+                            "message": "The request body exceeds the maximum allowed size.",
+                            "details": {"max_bytes": self.max_bytes},
+                        },
+                        "request_id": request_id_ctx.get(),
+                    }
+                ).encode()
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 413,
+                        "headers": [
+                            (b"content-type", b"application/json"),
+                            (b"content-length", str(len(body)).encode()),
+                            (b"connection", b"close"),
+                        ],
+                    }
+                )
+                await send({"type": "http.response.body", "body": body})
+                return
+        await self.app(scope, receive, send)
 
 
 class RequestContextMiddleware:

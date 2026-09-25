@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from arq.connections import ArqRedis
 from qdrant_client import AsyncQdrantClient
 from redis.asyncio import Redis
 
@@ -18,6 +19,7 @@ from app.cache.redis import create_redis
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.db.database import Database
+from app.queue import create_queue
 from app.storage import ObjectStorage, create_storage
 from app.vectorstore.collections import ensure_collection
 from app.vectorstore.qdrant import create_qdrant
@@ -32,6 +34,7 @@ class Resources:
     redis: Redis
     qdrant: AsyncQdrantClient
     storage: ObjectStorage
+    queue: ArqRedis
 
     @classmethod
     def create(cls, settings: Settings) -> Resources:
@@ -41,6 +44,7 @@ class Resources:
             redis=create_redis(settings),
             qdrant=create_qdrant(settings),
             storage=create_storage(settings),
+            queue=create_queue(settings),
         )
 
     async def bootstrap(self) -> None:
@@ -57,4 +61,6 @@ class Resources:
     async def close(self) -> None:
         await self.db.dispose()
         await self.redis.aclose()
+        await self.queue.aclose()
+        await self.queue.connection_pool.disconnect()  # explicit pools aren't auto-closed
         await self.qdrant.close()
