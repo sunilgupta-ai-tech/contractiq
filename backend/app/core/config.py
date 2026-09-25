@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     max_images_per_document: int = 200
     min_image_dimension_px: int = 150
 
+    # --- Chunking (worker, Phase 5) ---
+    # Sizes are *estimated* tokens (~4 chars each; see app/chunking/tokens.py).
+    chunk_max_tokens: int = 400  # child chunk: about one clause
+    chunk_min_tokens: int = 60  # smaller segments merge with a neighbour
+    chunk_overlap_tokens: int = 50  # carried between pieces of one long clause
+    chunk_parent_max_tokens: int = 1600  # parent (section) context for the LLM
+
     # --- LLM (backend only; never sent to the browser) ---
     llm_provider: LLMProviderName = LLMProviderName.OLLAMA
     ollama_base_url: str = "http://host.docker.internal:11434"

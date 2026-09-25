@@ -126,6 +126,14 @@ async def test_pipeline_parses_pdf_and_records_results(env):
     image_key = parsed["pages"][2]["images"][0]["storage_key"]
     assert (await resources.storage.get(image_key)).startswith(b"\x89PNG")
 
+    # Phase 5: chunks.json saved, child count recorded on the version.
+    chunks = json.loads(await resources.storage.get(meta["chunks_key"]))
+    children = [c for c in chunks["chunks"] if c["level"] == "child"]
+    assert version.chunk_count == len(children) > 0
+    assert meta["parent_chunks"] >= 1 and meta["chunker_version"] == chunks["chunker_version"]
+    # The user's document title roots every heading path.
+    assert all(c["heading_path"][0] == "Acme MSA" for c in children)
+
 
 async def test_password_protected_pdf_fails_permanently_without_retry(env):
     db, resources = env

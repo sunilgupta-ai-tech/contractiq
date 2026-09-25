@@ -7,7 +7,7 @@ stage the worker is executing. Stage handlers are filled in phase by phase:
 
     parse  (Phase 4)  PDF text layer, tables, images      -> artifacts["parse"]
     ocr    (Phase 4)  OCR scanned pages, layout, save JSON -> artifacts["parsed"]
-    chunk  (Phase 5)  section/clause-aware chunks
+    chunk  (Phase 5)  section/clause-aware chunks, save JSON -> artifacts["chunks"]
     embed  (Phase 6)  embeddings
     index  (Phase 6)  Qdrant upsert
 
@@ -27,7 +27,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.db.models import DocumentStatus
+from app.document_processing.parser import ParsedDocument
 from app.document_processing.pymupdf_parser import to_page_image
+from app.services.chunking_service import (
+    CHUNKER_VERSION,
+    ChunkingOptions,
+    ChunkingResult,
+    chunk_document,
+)
 from app.services.ocr_service import ocr_scanned_pages
 from app.services.pdf_service import (
     ParseResult,
@@ -50,6 +57,9 @@ class StageContext:
     version_id: str
     storage_key: str  # where the original PDF is stored
     resources: Any
+    # The title the user gave the document; used as the root of every
+    # chunk's heading path ("Master Services Agreement > 8. Termination").
+    document_title: str | None = None
     artifacts: dict[str, Any] = field(default_factory=dict)
     # Column name -> value, applied to the DocumentVersion row by the task.
     version_updates: dict[str, Any] = field(default_factory=dict)
@@ -126,7 +136,41 @@ async def _ocr(ctx: StageContext) -> None:
 
 
 async def _chunk(ctx: StageContext) -> None:
-    """Phase 5: section/clause-aware chunking of artifacts["parsed"]."""
+    """Split the parsed document into parent (section) and child (clause)
+    chunks and save them as chunks.json — the input for embeddings (Phase 6).
+
+    Normally the parsed document is handed over in memory by the ocr stage.
+    If this stage runs on its own (e.g. re-chunking after the chunking rules
+    change), it loads parsed.json instead, so OCR never has to be repeated.
+    """
+    parsed: ParsedDocument | None = ctx.artifacts.get("parsed")
+    if parsed is None:
+        raw = await ctx.resources.storage.get(ctx.artifact_key("parsed.json"))
+        parsed = ParsedDocument.from_dict(json.loads(raw))
+
+    options = ChunkingOptions.from_settings(ctx.resources.settings)
+    result: ChunkingResult = await asyncio.to_thread(
+        chunk_document,
+        parsed,
+        version_id=ctx.version_id,
+        document_title=ctx.document_title,
+        options=options,
+    )
+
+    chunks_key = ctx.artifact_key("chunks.json")
+    payload = json.dumps(result.to_dict(options), ensure_ascii=False).encode()
+    await ctx.resources.storage.put(chunks_key, payload, "application/json")
+
+    ctx.artifacts["chunks"] = result
+    # chunk_count = searchable (child) chunks, the number users care about.
+    ctx.version_updates["chunk_count"] = len(result.children)
+    metadata = ctx.version_updates.get("extraction_metadata")
+    if metadata is not None:
+        metadata.update(
+            chunks_key=chunks_key,
+            chunker_version=CHUNKER_VERSION,
+            parent_chunks=len(result.parents),
+        )
 
 
 async def _embed(ctx: StageContext) -> None:

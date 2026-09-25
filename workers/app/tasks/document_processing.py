@@ -87,6 +87,7 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             version_id=str(version.id),
             storage_key=version.storage_key,
             resources=resources,
+            document_title=document.title,
         )
         timings: dict[str, float] = {}
         await _set_status(
