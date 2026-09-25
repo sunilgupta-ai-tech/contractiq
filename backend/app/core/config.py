@@ -109,11 +109,29 @@ class Settings(BaseSettings):
     chunk_parent_max_tokens: int = 1600  # parent (section) context for the LLM
 
     # --- LLM (backend only; never sent to the browser) ---
-    llm_provider: LLMProviderName = LLMProviderName.OLLAMA
+    # Answer generation. Gemini by default; LLM_PROVIDER=ollama runs locally.
+    # Model names change over time — check Google's current model list
+    # before production and set GEMINI_MODEL explicitly.
+    llm_provider: LLMProviderName = LLMProviderName.GEMINI
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_model: str = "llama3.1:8b"
     gemini_api_key: SecretStr | None = None
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-2.5-flash"
+    llm_timeout_s: float = 60.0
+    llm_max_output_tokens: int = 1024
+
+    # --- Retrieval & answering (Phase 7) ---
+    # Candidates fetched by each search (dense and keyword) before fusion.
+    retrieval_prefetch: int = 40
+    # Candidates kept after fusion, handed to the reranker.
+    retrieval_candidates: int = 20
+    # Evidence chunks kept after reranking, i.e. what the answer may cite.
+    rerank_top_n: int = 6
+    reranker: str = "heuristic"  # heuristic | none
+    # Estimated-token budget for all evidence in the prompt (sections included).
+    context_max_tokens: int = 6000
+    # Previous question/answer pairs included for follow-up questions.
+    conversation_history_turns: int = 3
 
     # --- Embeddings (Phase 6) ---
     # Gemini by default (hosted; needs GEMINI_API_KEY). For fully local

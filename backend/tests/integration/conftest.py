@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from redis.asyncio import Redis
 from sqlalchemy import delete, select
 
 from app.core.config import Settings
@@ -41,8 +42,13 @@ async def cleanup() -> AsyncIterator[list[str]]:
         await session.execute(delete(Organization).where(Organization.id.in_(org_ids)))
         await session.commit()
     await db.dispose()
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
     for org_id in org_ids:
         shutil.rmtree(Path(settings.local_storage_path) / "tenants" / str(org_id), True)
+        # Tenant-prefixed cache entries (e.g. query embeddings).
+        async for key in redis.scan_iter(match=f"ciq:{org_id}:*"):
+            await redis.delete(key)
+    await redis.aclose()
 
 
 def new_email(tag: str) -> str:

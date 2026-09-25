@@ -1,4 +1,4 @@
-"""Helpers shared by embedding providers: error mapping and normalisation."""
+"""Helpers shared by LLM/embedding providers: error mapping and normalisation."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import math
 
 import httpx
 
-from app.llm.base import EmbeddingConfigError, EmbeddingError
+from app.llm.base import EmbeddingConfigError, EmbeddingError, LLMConfigError, LLMError
 
 # Status codes worth retrying: rate limited, request timeout, server errors.
 RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
@@ -24,6 +24,16 @@ def check_response(response: httpx.Response, provider: str) -> None:
     if response.status_code in RETRYABLE_STATUS:
         raise EmbeddingError(detail)
     raise EmbeddingConfigError(detail)
+
+
+def check_llm_response(response: httpx.Response, provider: str) -> None:
+    """Same classification as `check_response`, for text generation."""
+    if response.is_success:
+        return
+    detail = f"{provider} generation failed with HTTP {response.status_code}"
+    if response.status_code in RETRYABLE_STATUS:
+        raise LLMError(detail)
+    raise LLMConfigError(detail)
 
 
 def l2_normalize(vector: list[float]) -> list[float]:

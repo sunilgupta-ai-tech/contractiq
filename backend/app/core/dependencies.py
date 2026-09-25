@@ -25,6 +25,7 @@ from app.services.audit_service import RequestMeta
 from app.services.auth_service import AuthService
 from app.services.document_service import DocumentService
 from app.services.health_service import HealthService
+from app.services.query_service import QueryService
 from app.services.user_service import UserService
 
 _bearer = HTTPBearer(auto_error=False)
@@ -115,6 +116,17 @@ def get_document_service(
     return DocumentService(session, user.tenant_id, resources)
 
 
+def get_query_service(
+    user: Annotated[CurrentUser, Depends(require_permission(Permission.QUERY_RUN))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    resources: Annotated[Resources, Depends(get_resources)],
+) -> QueryService:
+    """Scoped to the caller's tenant and user (from the signed token)."""
+    return QueryService(
+        session, tenant_id=user.tenant_id, user_id=user.user_id, resources=resources
+    )
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
@@ -128,3 +140,5 @@ DocumentUploaderDep = Annotated[
     CurrentUser, Depends(require_permission(Permission.DOCUMENT_UPLOAD))
 ]
 DocumentDeleterDep = Annotated[CurrentUser, Depends(require_permission(Permission.DOCUMENT_DELETE))]
+QueryRunnerDep = Annotated[CurrentUser, Depends(require_permission(Permission.QUERY_RUN))]
+QueryServiceDep = Annotated[QueryService, Depends(get_query_service)]

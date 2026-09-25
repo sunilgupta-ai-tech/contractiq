@@ -13,22 +13,47 @@ from app.llm.base import (
     EmbeddingConfigError,
     EmbeddingError,
     EmbeddingTask,
+    LLMBlockedError,
+    LLMError,
     LLMResult,
 )
-from app.llm.embedding_utils import check_response, l2_normalize, validate_vectors
+from app.llm.embedding_utils import (
+    check_llm_response,
+    check_response,
+    l2_normalize,
+    validate_vectors,
+)
 
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 
 class GeminiProvider:
+    """Answer generation with Gemini (POST /models/{model}:generateContent).
+
+    System messages go into `systemInstruction` (Gemini's separate slot for
+    them), the rest into `contents` with roles user/model.
+    """
+
     name = "gemini"
 
-    def __init__(self, api_key: str, model: str, timeout_s: float = 60.0) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        timeout_s: float = 60.0,
+        transport: httpx.AsyncBaseTransport | None = None,  # tests inject a mock
+    ) -> None:
         self.model = model
         # Key goes in a header, not the URL, so it never lands in access logs.
         self._client = httpx.AsyncClient(
-            base_url=_BASE_URL, timeout=timeout_s, headers={"x-goog-api-key": api_key}
+            base_url=_BASE_URL,
+            timeout=timeout_s,
+            headers={"x-goog-api-key": api_key},
+            transport=transport,
         )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     async def generate(
         self, messages: list[ChatMessage], *, temperature: float = 0.0, max_tokens: int = 1024
@@ -46,12 +71,25 @@ class GeminiProvider:
         }
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
-        response = await self._client.post(f"/models/{self.model}:generateContent", json=payload)
-        response.raise_for_status()
+        try:
+            response = await self._client.post(
+                f"/models/{self.model}:generateContent", json=payload
+            )
+        except httpx.HTTPError as exc:
+            raise LLMError(f"Gemini request failed: {type(exc).__name__}") from exc
+        check_llm_response(response, "Gemini")
         body = response.json()
         usage = body.get("usageMetadata", {})
+        # No candidate, or a candidate without text, means the response was
+        # blocked (safety filter, recitation) — report it, don't crash on it.
+        candidates = body.get("candidates") or []
+        parts = (candidates[0].get("content") or {}).get("parts") if candidates else None
+        text = "".join(p.get("text", "") for p in parts or [])
+        if not text.strip():
+            reason = candidates[0].get("finishReason") if candidates else "NO_CANDIDATES"
+            raise LLMBlockedError(f"Gemini returned no text (finishReason={reason})")
         return LLMResult(
-            text=body["candidates"][0]["content"]["parts"][0]["text"],
+            text=text,
             model=self.model,
             prompt_tokens=usage.get("promptTokenCount"),
             completion_tokens=usage.get("candidatesTokenCount"),

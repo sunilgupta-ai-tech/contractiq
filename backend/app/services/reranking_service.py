@@ -1,11 +1,14 @@
 """
-Cross-encoder reranking of retrieval candidates; keeps top-N evidence for the context window.
-
-Status: interface placeholder — implemented in Phase 7.
+Reranker selection. The algorithms live in app/rag/reranker.py; this module
+only maps the RERANKER setting to one of them, so services depend on the
+`Reranker` protocol rather than a concrete class.
 """
 
 from __future__ import annotations
 
+from app.core.config import Settings
+from app.rag.reranker import Reranker, create_reranker
 
-class RerankingService:
-    """See module docstring. Implemented in Phase 7."""
+
+def reranker_for(settings: Settings) -> Reranker:
+    return create_reranker(settings.reranker)

@@ -1,10 +1,10 @@
 async def test_planned_endpoint_returns_501_envelope(client):
-    response = await client.post("/api/v1/query")
+    response = await client.post("/api/v1/contracts/compare")
     assert response.status_code == 501
     body = response.json()
     assert body["success"] is False
     assert body["error"]["code"] == "NOT_IMPLEMENTED"
-    assert body["error"]["details"]["phase"] == 7
+    assert body["error"]["details"]["phase"] == 10
     assert body["request_id"]
 
 

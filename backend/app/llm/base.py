@@ -28,12 +28,28 @@ class LLMResult:
     latency_ms: float | None = None
 
 
+class LLMError(Exception):
+    """A temporary generation failure (rate limit, 5xx, timeout). Retryable."""
+
+
+class LLMConfigError(LLMError):
+    """Retrying cannot help: bad key, unknown model, malformed request."""
+
+
+class LLMBlockedError(LLMError):
+    """The provider returned no text — typically its safety filter blocked
+    the response. Not retried; the user gets a neutral message."""
+
+
 class LLMProvider(Protocol):
     name: str
+    model: str
 
     async def generate(
         self, messages: list[ChatMessage], *, temperature: float = 0.0, max_tokens: int = 1024
     ) -> LLMResult: ...
+
+    async def aclose(self) -> None: ...
 
 
 class EmbeddingTask(StrEnum):
@@ -71,3 +87,10 @@ class EmbeddingProvider(Protocol):
     ) -> list[list[float]]: ...
 
     async def aclose(self) -> None: ...
+
+
+def embedding_model_label(provider: EmbeddingProvider) -> str:
+    """'provider:model:dimension', stored on every Qdrant point at indexing time
+    and required at search time, so vectors from different models (or sizes)
+    are never compared with each other."""
+    return f"{provider.name}:{provider.model}:{provider.dimension}"

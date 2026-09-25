@@ -19,8 +19,8 @@ from app.cache.redis import create_redis
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.db.database import Database
-from app.llm.base import EmbeddingProvider
-from app.llm.factory import create_embeddings
+from app.llm.base import EmbeddingProvider, LLMProvider
+from app.llm.factory import create_embeddings, create_llm
 from app.queue import create_queue
 from app.storage import ObjectStorage, create_storage
 from app.vectorstore.collections import ensure_collection
@@ -40,6 +40,16 @@ class Resources:
     # Created on first use (see `embeddings()`), not at startup: a missing
     # GEMINI_API_KEY must not stop the API from booting in development.
     _embeddings: EmbeddingProvider | None = field(default=None, repr=False)
+    _llm: LLMProvider | None = field(default=None, repr=False)
+
+    def llm(self) -> LLMProvider:
+        """The configured answer-generation model, created on first use.
+
+        Raises LLMConfigError if it is misconfigured (e.g. no API key).
+        """
+        if self._llm is None:
+            self._llm = create_llm(self.settings)
+        return self._llm
 
     def embeddings(self) -> EmbeddingProvider:
         """The configured embedding provider (one shared HTTP client per process).
@@ -80,3 +90,5 @@ class Resources:
         await self.qdrant.close()
         if self._embeddings is not None:
             await self._embeddings.aclose()
+        if self._llm is not None:
+            await self._llm.aclose()

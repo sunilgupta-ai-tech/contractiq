@@ -20,7 +20,7 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | GET | `/documents/{id}`, `/documents/{id}/status` | 3 | live — detail with all versions; processing progress of the latest version |
 | DELETE | `/documents/{id}` | 3 | live — 204; removes vectors, rows and files. ADMIN, LEGAL_MANAGER |
 | GET | `/jobs/{id}` | 3 | live — job status, attempts, per-stage timings |
-| POST | `/query` | 7 | 501 |
+| POST | `/query` | 7 | live — cited answer over the tenant's contracts (hybrid search, rerank, small-to-big); see docs/rag.md |
 | POST | `/contracts/summarize`, `/contracts/extract-clauses`, `/contracts/compare`, `/contracts/risk-analysis`, `/contracts/portfolio-summary` | 10 | 501 |
 
 Every response carries `X-Request-ID`; send your own to correlate with upstream logs.

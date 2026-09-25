@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 from app.core.config import LLMProviderName, Settings
-from app.llm.base import EmbeddingConfigError, EmbeddingProvider, LLMProvider
+from app.llm.base import EmbeddingConfigError, EmbeddingProvider, LLMConfigError, LLMProvider
 
 
 def create_llm(settings: Settings) -> LLMProvider:
+    """The answer-generation model chosen by LLM_PROVIDER (gemini | ollama).
+
+    Raises LLMConfigError if Gemini is selected without a key.
+    """
     if settings.llm_provider is LLMProviderName.GEMINI:
         if not settings.gemini_api_key:
-            raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini")
+            raise LLMConfigError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini")
         from app.llm.gemini import GeminiProvider
 
-        return GeminiProvider(settings.gemini_api_key.get_secret_value(), settings.gemini_model)
+        return GeminiProvider(
+            settings.gemini_api_key.get_secret_value(),
+            settings.gemini_model,
+            timeout_s=settings.llm_timeout_s,
+        )
     from app.llm.ollama import OllamaProvider
 
-    return OllamaProvider(settings.ollama_base_url, settings.ollama_model)
+    return OllamaProvider(
+        settings.ollama_base_url, settings.ollama_model, timeout_s=settings.llm_timeout_s
+    )
 
 
 def create_embeddings(settings: Settings) -> EmbeddingProvider:

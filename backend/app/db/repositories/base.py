@@ -51,6 +51,16 @@ class TenantScopedRepository(Generic[ModelT]):
         stmt = select(func.count()).select_from(self._scoped().filter_by(**filters).subquery())
         return int((await self.session.execute(stmt)).scalar_one())
 
+    async def count_ids(self, ids: Sequence[uuid.UUID]) -> int:
+        """How many of `ids` exist *in this tenant*. Used to validate IDs a
+        client sends (e.g. documents to search): a foreign ID simply doesn't
+        count, so it is reported as not found, like any unknown ID."""
+        if not ids:
+            return 0
+        scoped = self._scoped().where(self.model.id.in_(set(ids)))  # type: ignore[attr-defined]
+        stmt = select(func.count()).select_from(scoped.subquery())
+        return int((await self.session.execute(stmt)).scalar_one())
+
     async def add(self, entity: ModelT) -> ModelT:
         entity.organization_id = self.tenant_id  # type: ignore[attr-defined]
         self.session.add(entity)

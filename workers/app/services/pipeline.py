@@ -30,7 +30,7 @@ from app.chunking.models import Chunk
 from app.db.models import DocumentStatus
 from app.document_processing.parser import ParsedDocument
 from app.document_processing.pymupdf_parser import to_page_image
-from app.llm.base import EmbeddingProvider
+from app.llm.base import embedding_model_label
 from app.services.chunking_service import (
     CHUNKER_VERSION,
     ChunkingOptions,
@@ -198,11 +198,6 @@ async def _load_chunks(ctx: StageContext) -> ChunkingResult:
     return chunks
 
 
-def _model_label(provider: EmbeddingProvider) -> str:
-    """Recorded on every point; search only compares vectors with the same label."""
-    return f"{provider.name}:{provider.model}:{provider.dimension}"
-
-
 async def _embed(ctx: StageContext) -> None:
     """Embed every child chunk (Gemini by default) via EmbeddingService,
     which batches, retries and caches. Parents are not embedded — they are
@@ -213,10 +208,10 @@ async def _embed(ctx: StageContext) -> None:
     vectors, stats = await service.embed_documents(
         [c.embedding_text for c in chunks.children], tenant_id=ctx.tenant_id
     )
-    ctx.artifacts.update(vectors=vectors, embedding_model=_model_label(provider))
+    ctx.artifacts.update(vectors=vectors, embedding_model=embedding_model_label(provider))
     metadata = ctx.version_updates.get("extraction_metadata")
     if metadata is not None:
-        metadata.update(embedding_model=_model_label(provider), embedding=asdict(stats))
+        metadata.update(embedding_model=embedding_model_label(provider), embedding=asdict(stats))
 
 
 async def _index(ctx: StageContext) -> None:

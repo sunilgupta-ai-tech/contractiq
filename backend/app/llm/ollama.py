@@ -6,34 +6,63 @@ import time
 
 import httpx
 
-from app.llm.base import ChatMessage, EmbeddingError, EmbeddingTask, LLMResult
-from app.llm.embedding_utils import check_response, l2_normalize, validate_vectors
+from app.llm.base import (
+    ChatMessage,
+    EmbeddingError,
+    EmbeddingTask,
+    LLMBlockedError,
+    LLMError,
+    LLMResult,
+)
+from app.llm.embedding_utils import (
+    check_llm_response,
+    check_response,
+    l2_normalize,
+    validate_vectors,
+)
 
 
 class OllamaProvider:
+    """Local answer generation via Ollama's /api/chat (e.g. llama3.1:8b)."""
+
     name = "ollama"
 
-    def __init__(self, base_url: str, model: str, timeout_s: float = 120.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout_s: float = 120.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self.model = model
-        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_s)
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_s, transport=transport)
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     async def generate(
         self, messages: list[ChatMessage], *, temperature: float = 0.0, max_tokens: int = 1024
     ) -> LLMResult:
         started = time.perf_counter()
-        response = await self._client.post(
-            "/api/chat",
-            json={
-                "model": self.model,
-                "messages": [{"role": m.role, "content": m.content} for m in messages],
-                "stream": False,
-                "options": {"temperature": temperature, "num_predict": max_tokens},
-            },
-        )
-        response.raise_for_status()
+        try:
+            response = await self._client.post(
+                "/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": [{"role": m.role, "content": m.content} for m in messages],
+                    "stream": False,
+                    "options": {"temperature": temperature, "num_predict": max_tokens},
+                },
+            )
+        except httpx.HTTPError as exc:  # Ollama not running, timeout
+            raise LLMError(f"Ollama request failed: {type(exc).__name__}") from exc
+        check_llm_response(response, "Ollama")
         body = response.json()
+        text = (body.get("message") or {}).get("content") or ""
+        if not text.strip():
+            raise LLMBlockedError("Ollama returned no text")
         return LLMResult(
-            text=body["message"]["content"],
+            text=text,
             model=self.model,
             prompt_tokens=body.get("prompt_eval_count"),
             completion_tokens=body.get("eval_count"),
