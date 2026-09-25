@@ -15,6 +15,16 @@ class ObjectStorage(Protocol):
     async def get(self, key: str) -> bytes: ...
     async def delete(self, key: str) -> None: ...
     async def exists(self, key: str) -> bool: ...
+    async def delete_prefix(self, prefix: str) -> None:
+        """Delete every object whose key starts with `prefix` (a "folder").
+        Used to remove a document together with all files derived from it."""
+        ...
+
+
+def document_prefix(tenant_id: str, document_id: str) -> str:
+    """The folder holding every file of one document: all versions' PDFs,
+    parsed.json and extracted images."""
+    return f"tenants/{tenant_id}/documents/{document_id}/"
 
 
 def build_object_key(tenant_id: str, document_id: str, version_id: str, filename: str) -> str:

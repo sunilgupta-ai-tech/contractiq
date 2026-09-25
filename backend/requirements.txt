@@ -27,11 +27,16 @@ boto3==1.35.90
 # --- HTTP ---
 httpx==0.28.1
 
-# --- Phase 4+ (document processing, RAG, agents) — enabled as phases land ---
-# pymupdf==1.25.1
-# pdfplumber==0.11.4
-# unstructured[pdf]==0.16.11
-# pytesseract==0.3.13
+# --- Document processing (Phase 4) ---
+# PyMuPDF is AGPL-3.0: closed-source commercial use needs an Artifex licence.
+pymupdf==1.28.2
+pdfplumber==0.11.10
+# Python wrapper only; the `tesseract` binary is installed in workers/Dockerfile.
+pytesseract==0.3.13
+pillow==12.3.0
+# unstructured[pdf] deliberately not used — see app/document_processing/unstructured_parser.py
+
+# --- Phase 7+ (RAG, agents) — enabled as phases land; re-check versions then ---
 # langchain==0.3.13
 # langgraph==0.2.60
 # langchain-google-genai==2.0.7

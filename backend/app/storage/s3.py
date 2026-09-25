@@ -46,6 +46,22 @@ class S3ObjectStorage:
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self._client.delete_object, Bucket=self.bucket, Key=key)
 
+    async def delete_prefix(self, prefix: str) -> None:
+        if not prefix.strip("/"):
+            raise ValueError("Refusing to delete the whole bucket")
+        await asyncio.to_thread(self._delete_prefix_sync, prefix)
+
+    def _delete_prefix_sync(self, prefix: str) -> None:
+        # S3 has no folders: list every key under the prefix (paginated,
+        # 1000 per page) and delete each page in one batch request.
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+            if objects:
+                self._client.delete_objects(
+                    Bucket=self.bucket, Delete={"Objects": objects, "Quiet": True}
+                )
+
     async def exists(self, key: str) -> bool:
         try:
             await asyncio.to_thread(self._client.head_object, Bucket=self.bucket, Key=key)

@@ -174,12 +174,17 @@ async def test_delete_removes_rows_files_and_is_audited(api, cleanup):
     result = _upload(api, admin).json()["data"]
     doc_id, job_id = result["document"]["id"], result["job"]["id"]
     key = (await _version_row(result["version"]["id"])).storage_key
+    # A file the worker derives next to the PDF (Phase 4) must go too.
+    storage = create_storage(Settings())
+    derived = key.replace("original.pdf", "parsed.json")
+    await storage.put(derived, b"{}", "application/json")
 
     response = api.delete(f"/api/v1/documents/{doc_id}", headers=auth(admin))
     assert response.status_code == 204
     assert api.get(f"/api/v1/documents/{doc_id}", headers=auth(admin)).status_code == 404
     assert api.get(f"/api/v1/jobs/{job_id}", headers=auth(admin)).status_code == 404
-    assert not await create_storage(Settings()).exists(key)
+    assert not await storage.exists(key)
+    assert not await storage.exists(derived)
 
     db = Database(Settings())
     async with db.session_factory() as session:

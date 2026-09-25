@@ -31,6 +31,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11", cache: pip }
+      # Tesseract so OCR tests run in CI instead of being skipped.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
       - run: pip install -r requirements-dev.txt
       - run: ruff check app tests && ruff format --check app tests
       - run: alembic upgrade head && alembic downgrade base && alembic upgrade head

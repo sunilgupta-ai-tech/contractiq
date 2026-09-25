@@ -1,14 +1,17 @@
 """
-Worker integration test against real PostgreSQL.
+Worker integration test against real PostgreSQL, with the PDF stored in a
+temporary local storage directory.
 
     make infra && make migrate
     cd workers && CONTRACTIQ_INTEGRATION=1 PYTHONPATH=../backend:.run pytest -q
 """
 
+import json
 import os
 import uuid
 
 import pytest
+from sqlalchemy import delete
 from worker.services import pipeline
 from worker.tasks.document_processing import process_document
 
@@ -23,6 +26,8 @@ from app.db.models import (
     Organization,
     ProcessingJob,
 )
+from app.storage.local import LocalObjectStorage
+from tests import pdf_factory
 
 pytestmark = pytest.mark.skipif(
     os.getenv("CONTRACTIQ_INTEGRATION") != "1", reason="set CONTRACTIQ_INTEGRATION=1"
@@ -30,27 +35,52 @@ pytestmark = pytest.mark.skipif(
 
 
 class _Resources:
-    def __init__(self, db: Database) -> None:
+    """The subset of app Resources the pipeline uses."""
+
+    def __init__(self, db: Database, storage: LocalObjectStorage) -> None:
         self.db = db
+        self.storage = storage
+        self.settings = Settings()
+        self.org_ids: list[uuid.UUID] = []  # created by _seed, deleted after the test
 
 
-async def _seed(db: Database) -> str:
+@pytest.fixture
+async def env(tmp_path):
+    db = Database(Settings())
+    resources = _Resources(db, LocalObjectStorage(str(tmp_path)))
+    yield db, resources
+    # Deleting the organization cascades to its documents, versions and jobs,
+    # so the test leaves no rows behind in the database.
+    async with db.session_factory() as s:
+        await s.execute(delete(Organization).where(Organization.id.in_(resources.org_ids)))
+        await s.commit()
+    await db.dispose()
+
+
+async def _seed(resources: _Resources, pdf: bytes) -> str:
+    """Create org/document/version/job rows and store the PDF; returns the job ID."""
+    db, storage = resources.db, resources.storage
     async with db.session_factory() as s:
         org = Organization(name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}")
         s.add(org)
         await s.flush()
+        resources.org_ids.append(org.id)
         doc = Document(title="Acme MSA", organization_id=org.id)
         s.add(doc)
         await s.flush()
+        version_id = uuid.uuid4()
+        key = f"tenants/{org.id}/documents/{doc.id}/{version_id}/original.pdf"
+        await storage.put(key, pdf, "application/pdf")
         version = DocumentVersion(
+            id=version_id,
             organization_id=org.id,
             document_id=doc.id,
             version_number=1,
             label="v1",
             original_filename="msa.pdf",
-            storage_key="k",
+            storage_key=key,
             mime_type="application/pdf",
-            size_bytes=10,
+            size_bytes=len(pdf),
             sha256="0" * 64,
         )
         s.add(version)
@@ -73,35 +103,60 @@ async def _load(db: Database, job_id: str):
         return job, version, doc
 
 
-async def test_pipeline_completes_and_records_stage_timings():
-    db = Database(Settings())
-    job_id = await _seed(db)
-    result = await process_document({"resources": _Resources(db)}, job_id)
+async def test_pipeline_parses_pdf_and_records_results(env):
+    db, resources = env
+    job_id = await _seed(resources, pdf_factory.contract_pdf())
+    result = await process_document({"resources": resources}, job_id)
     job, version, doc = await _load(db, job_id)
+
     assert result["status"] == "COMPLETED"
     assert job.status is JobStatus.SUCCEEDED and job.progress == 100
     assert set(job.stage_timings_ms) == {"parse", "ocr", "chunk", "embed", "index"}
     assert version.status is DocumentStatus.COMPLETED and doc.status is DocumentStatus.COMPLETED
     assert doc.current_version_id == version.id
-    await db.dispose()
+
+    # Phase 4 results written to the version row...
+    assert version.page_count == 3 and version.is_scanned is False
+    meta = version.extraction_metadata
+    assert meta["tables"] == 1 and meta["images"] == 1 and meta["warnings"] == []
+
+    # ...and parsed.json + the image saved next to the original PDF.
+    parsed = json.loads(await resources.storage.get(meta["parsed_key"]))
+    assert [p["number"] for p in parsed["pages"]] == [1, 2, 3]
+    image_key = parsed["pages"][2]["images"][0]["storage_key"]
+    assert (await resources.storage.get(image_key)).startswith(b"\x89PNG")
 
 
-async def test_stage_failure_marks_job_failed(monkeypatch):
+async def test_password_protected_pdf_fails_permanently_without_retry(env):
+    db, resources = env
+    job_id = await _seed(resources, pdf_factory.encrypted_pdf())
+    # Returns instead of raising: arq must not retry a file that can never open.
+    result = await process_document({"resources": resources}, job_id)
+    job, version, doc = await _load(db, job_id)
+
+    assert result["status"] == "FAILED"
+    assert job.status is JobStatus.FAILED and doc.status is DocumentStatus.FAILED
+    assert version.error_message == "The PDF is password-protected. Upload an unlocked copy."
+    assert job.error_message == "EncryptedPdfError in stage parse"
+
+
+async def test_transient_stage_failure_marks_job_failed_and_reraises(env, monkeypatch):
     async def boom(ctx):
-        raise RuntimeError("corrupt xref table")
+        raise RuntimeError("storage timeout")
 
     failing = tuple(
         pipeline.Stage(s.name, s.status, boom if s.name == "chunk" else s.handler, s.progress)
         for s in pipeline.PIPELINE
     )
     monkeypatch.setattr("worker.tasks.document_processing.PIPELINE", failing)
-    db = Database(Settings())
-    job_id = await _seed(db)
-    with pytest.raises(RuntimeError):
-        await process_document({"resources": _Resources(db)}, job_id)
+    db, resources = env
+    job_id = await _seed(resources, pdf_factory.contract_pdf())
+    with pytest.raises(RuntimeError):  # re-raised so arq retries it
+        await process_document({"resources": resources}, job_id)
     job, version, doc = await _load(db, job_id)
     assert job.status is JobStatus.FAILED
     assert job.error_message == "RuntimeError in stage chunk"
+    assert version.error_message == "Processing failed. See job logs for details."
     assert doc.status is DocumentStatus.FAILED
     assert set(job.stage_timings_ms) == {"parse", "ocr"}
-    await db.dispose()
+    assert version.page_count == 3  # results of completed stages are kept

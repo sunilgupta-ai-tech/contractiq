@@ -18,10 +18,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger, tenant_id_ctx
 from app.db.models import Document, DocumentStatus, DocumentVersion, JobStatus, ProcessingJob
+from app.document_processing.parser import PdfProcessingError
 
 from ..services.pipeline import PIPELINE, Stage, StageContext
 
 logger = get_logger("contractiq.worker.document_processing")
+
+GENERIC_FAILURE = "Processing failed. See job logs for details."
+
+
+def _apply_version_updates(version: DocumentVersion, updates: dict[str, Any]) -> None:
+    """Write fields collected by stages (page_count, is_scanned,
+    extraction_metadata) onto the version row. Applied on success *and*
+    failure, so e.g. the page count is known even if a later stage failed."""
+    for column, value in updates.items():
+        setattr(version, column, value)
 
 
 async def _set_status(
@@ -52,8 +63,11 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         Summary with final status and per-stage timings (stored in arq results).
 
     Raises:
-        Re-raises stage exceptions after recording FAILED, so arq applies its
-        retry policy; the DB row always reflects the final outcome.
+        Re-raises *transient* stage exceptions after recording FAILED, so arq
+        applies its retry policy; the DB row always reflects the final outcome.
+        A PdfProcessingError (encrypted/corrupt/oversized file) is permanent:
+        it is recorded with its user-facing message and NOT re-raised, because
+        retrying the same bytes can never succeed.
     """
     resources = ctx["resources"]
     async with resources.db.session_factory() as session:
@@ -106,11 +120,23 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                     stage_timings_ms=dict(timings),
                 )
         except Exception as exc:
-            logger.exception(
-                "stage_failed", extra={"job_id": job_id, "stage": getattr(stage, "name", None)}
-            )
+            permanent = isinstance(exc, PdfProcessingError)
+            stage_name = getattr(stage, "name", None)
+            if permanent:
+                # Expected outcome for a bad file: no stack trace needed.
+                logger.warning(
+                    "document_rejected",
+                    extra={"job_id": job_id, "stage": stage_name, "reason": type(exc).__name__},
+                )
+            else:
+                logger.exception("stage_failed", extra={"job_id": job_id, "stage": stage_name})
             await session.rollback()
-            version.error_message = "Processing failed. See job logs for details."
+            _apply_version_updates(version, stage_ctx.version_updates)
+            # Only PdfProcessingError messages are written for users; other
+            # exception text may contain internals and stays in the logs.
+            version.error_message = (
+                exc.user_message if isinstance(exc, PdfProcessingError) else GENERIC_FAILURE
+            )
             await _set_status(
                 session,
                 job,
@@ -122,8 +148,11 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                 finished_at=datetime.now(UTC),
                 stage_timings_ms=dict(timings),
             )
+            if isinstance(exc, PdfProcessingError):
+                return {"status": "FAILED", "reason": exc.user_message, "timings_ms": timings}
             raise
 
+        _apply_version_updates(version, stage_ctx.version_updates)
         await _set_status(
             session,
             job,

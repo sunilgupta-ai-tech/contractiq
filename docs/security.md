@@ -30,4 +30,10 @@ Implemented in Phase 3:
 * Documents, versions and jobs are read through tenant-scoped repositories; another organization's IDs return `NOT_FOUND`. Delete removes Qdrant points (through `tenant_filter`) before rows and files.
 * `document.upload` and `document.delete` are audited (IDs, size, hash — no content).
 
-Planned: rate limiting, including login throttling (Redis, Phase 11); encrypted/malformed PDF detection (Phase 4); AV scanning of uploads; tool authorization in the agent registry; output/citation validation (Phase 11); httpOnly-cookie sessions via a frontend BFF route (the frontend still holds the access token in memory).
+Implemented in Phase 4:
+
+* PDFs are parsed only in the worker (never the API process), in a thread with a page ceiling (`MAX_PDF_PAGES`) checked before any page is read, and per-page OCR timeouts.
+* Password-protected and corrupt PDFs are rejected with a fixed user-facing message; exception text from parsers is logged, never shown to users.
+* Derived files (parsed.json, images) are stored under the same tenant-prefixed path as the original and are removed with it.
+
+Planned: rate limiting, including login throttling (Redis, Phase 11); AV scanning of uploads; tool authorization in the agent registry; output/citation validation (Phase 11); httpOnly-cookie sessions via a frontend BFF route (the frontend still holds the access token in memory).

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from pathlib import Path
 
 from app.core.exceptions import NotFoundError
@@ -36,3 +37,12 @@ class LocalObjectStorage:
 
     async def exists(self, key: str) -> bool:
         return self._path(key).exists()
+
+    async def delete_prefix(self, prefix: str) -> None:
+        # Refuse an empty prefix: it would resolve to the storage root and
+        # delete every tenant's files.
+        if not prefix.strip("/"):
+            raise ValueError("Refusing to delete the storage root")
+        path = self._path(prefix)
+        if path.is_dir():
+            await asyncio.to_thread(shutil.rmtree, path)

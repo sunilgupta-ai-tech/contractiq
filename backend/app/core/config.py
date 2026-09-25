@@ -84,6 +84,21 @@ class Settings(BaseSettings):
     aws_access_key_id: SecretStr | None = None
     aws_secret_access_key: SecretStr | None = None
 
+    # --- PDF processing (worker) ---
+    # Hard ceiling checked before any page is read, so a pathological file
+    # can't tie up a worker for hours.
+    max_pdf_pages: int = 2000
+    # OCR for scanned pages. Languages use Tesseract codes joined by "+"
+    # ("eng", "eng+deu"); each needs its language pack in the worker image.
+    ocr_enabled: bool = True
+    ocr_languages: str = "eng"
+    ocr_dpi: int = 300  # accuracy drops noticeably below ~250 on small print
+    ocr_page_timeout_s: int = 120
+    # Embedded images kept for multimodal RAG (Phase 9). Smaller images are
+    # logos/icons and are skipped.
+    max_images_per_document: int = 200
+    min_image_dimension_px: int = 150
+
     # --- LLM (backend only; never sent to the browser) ---
     llm_provider: LLMProviderName = LLMProviderName.OLLAMA
     ollama_base_url: str = "http://host.docker.internal:11434"

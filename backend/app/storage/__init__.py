@@ -1,5 +1,5 @@
 from app.core.config import Settings, StorageBackend
-from app.storage.base import ObjectStorage, build_object_key
+from app.storage.base import ObjectStorage, build_object_key, document_prefix
 
 
 def create_storage(settings: Settings) -> ObjectStorage:
@@ -12,4 +12,4 @@ def create_storage(settings: Settings) -> ObjectStorage:
     return LocalObjectStorage(settings.local_storage_path)
 
 
-__all__ = ["ObjectStorage", "build_object_key", "create_storage"]
+__all__ = ["ObjectStorage", "build_object_key", "create_storage", "document_prefix"]

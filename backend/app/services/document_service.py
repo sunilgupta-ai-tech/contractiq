@@ -65,7 +65,7 @@ from app.schemas.document import (
     UploadResult,
 )
 from app.services.audit_service import RequestMeta, record_audit
-from app.storage import build_object_key
+from app.storage import build_object_key, document_prefix
 from app.vectorstore.qdrant import tenant_filter
 
 if TYPE_CHECKING:
@@ -140,7 +140,9 @@ class UploadMetadata:
 
 
 def _latest(document: Document) -> DocumentVersion | None:
-    return max(document.versions, key=lambda v: v.version_number, default=None)
+    if not document.versions:
+        return None
+    return max(document.versions, key=lambda v: v.version_number)
 
 
 def to_document_out(document: Document) -> DocumentOut:
@@ -346,7 +348,7 @@ class DocumentService:
         self, document_id: uuid.UUID, *, actor_id: uuid.UUID, meta: RequestMeta
     ) -> None:
         document = await self.documents.get_with_versions(document_id)
-        keys = [v.storage_key for v in document.versions]
+        version_count = len(document.versions)
 
         # Vectors first: once this succeeds nothing about the document can be
         # retrieved, even if a later step fails and the user retries.
@@ -373,12 +375,18 @@ class DocumentService:
             resource_type="document",
             resource_id=document.id,
             meta=meta,
-            metadata={"versions": len(keys)},
+            metadata={"versions": version_count},
         )
         await self.session.commit()
 
-        for key in keys:
-            await self._delete_object_quietly(key)
+        # The whole document folder: every version's PDF plus derived files
+        # (parsed.json, extracted images). Rows are already gone, so a failure
+        # here leaves unreachable bytes, which are logged rather than surfaced.
+        prefix = document_prefix(str(self.tenant_id), str(document.id))
+        try:
+            await self.resources.storage.delete_prefix(prefix)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("storage_delete_failed", extra={"prefix": prefix, "error": repr(exc)})
 
     async def _delete_object_quietly(self, key: str) -> None:
         try:
