@@ -37,7 +37,14 @@ from dataclasses import dataclass, field
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.guardrails.prompt_injection import scan_for_injection
-from app.llm.base import LLMBlockedError, LLMConfigError, LLMError, LLMProvider, LLMResult
+from app.llm.base import (
+    ChatMessage,
+    LLMBlockedError,
+    LLMConfigError,
+    LLMError,
+    LLMProvider,
+    LLMResult,
+)
 from app.rag.context import build_evidence
 from app.rag.prompts.system import INSUFFICIENT_EVIDENCE, PROMPT_VERSION, build_messages
 from app.rag.reranker import Reranker
@@ -188,22 +195,12 @@ class QAPipeline:
         blocks: list[EvidenceBlock],
         history: list[tuple[str, str]] | None,
     ) -> LLMResult:
-        messages = build_messages(question, blocks, history)
-        for attempt in range(2):  # one retry for temporary errors
-            try:
-                return await self.llm.generate(
-                    messages,
-                    temperature=0.0,  # deterministic, extractive answers
-                    max_tokens=self.settings.llm_max_output_tokens,
-                )
-            except (LLMConfigError, LLMBlockedError):
-                raise
-            except LLMError:
-                if attempt == 1:
-                    raise
-                logger.warning("llm_retry")
-                await self._sleep(1.0)
-        raise AssertionError("unreachable")
+        return await generate_answer(
+            self.llm,
+            build_messages(question, blocks, history),
+            max_tokens=self.settings.llm_max_output_tokens,
+            sleep=self._sleep,
+        )
 
     def _not_found(self, steps: list[Step], flags: list[str]) -> RagAnswer:
         return RagAnswer(
@@ -216,6 +213,33 @@ class QAPipeline:
             prompt_version=PROMPT_VERSION,
             injection_flags=flags,
         )
+
+
+async def generate_answer(
+    llm: LLMProvider,
+    messages: list[ChatMessage],
+    *,
+    max_tokens: int,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+) -> LLMResult:
+    """Call the LLM with one retry for temporary errors (shared with the
+    Phase 8 agent). Configuration errors and blocked replies are raised at
+    once — retrying can't fix them."""
+    for attempt in range(2):
+        try:
+            return await llm.generate(
+                messages,
+                temperature=0.0,  # deterministic, extractive answers
+                max_tokens=max_tokens,
+            )
+        except (LLMConfigError, LLMBlockedError):
+            raise
+        except LLMError:
+            if attempt == 1:
+                raise
+            logger.warning("llm_retry")
+            await sleep(1.0)
+    raise AssertionError("unreachable")
 
 
 def _step(key: str, label: str, detail: str, started: float, status: str = "done") -> Step:

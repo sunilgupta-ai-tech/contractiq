@@ -36,8 +36,8 @@ pytesseract==0.3.13
 pillow==12.3.0
 # unstructured[pdf] deliberately not used — see app/document_processing/unstructured_parser.py
 
-# --- Phase 7+ (RAG, agents) — enabled as phases land; re-check versions then ---
-# langchain==0.3.13
-# langgraph==0.2.60
-# langchain-google-genai==2.0.7
-# langchain-ollama==0.2.2
+# --- Agent workflow (Phase 8) ---
+# LangGraph only (it brings langchain-core). The agent's nodes call our own
+# Gemini/Ollama providers (app/llm), so langchain, langchain-google-genai and
+# langchain-ollama are not needed — one LLM layer, not two.
+langgraph==1.2.12

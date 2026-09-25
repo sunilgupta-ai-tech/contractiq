@@ -123,7 +123,11 @@ def get_query_service(
 ) -> QueryService:
     """Scoped to the caller's tenant and user (from the signed token)."""
     return QueryService(
-        session, tenant_id=user.tenant_id, user_id=user.user_id, resources=resources
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.user_id,
+        role=user.role,
+        resources=resources,
     )
 
 

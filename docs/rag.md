@@ -2,6 +2,8 @@
 
 `POST /api/v1/query` answers a question from the organization's contracts, citing document, version, page, section and clause for every statement.
 
+This page describes the single-pass pipeline (`mode: "fast"`). The default `mode: "agent"` wraps the same steps in the Phase 8 LangGraph agent — see [agentic-rag.md](agentic-rag.md).
+
 ## Flow
 
 ```text
@@ -83,7 +85,7 @@ Ollama is supported for generation as well: `LLM_PROVIDER=ollama`, `OLLAMA_MODEL
 
 ## Known limits (next phases)
 
-* Follow-ups use conversation history for the answer, but retrieval uses only the new question; pronoun-heavy follow-ups ("what about that one?") may retrieve poorly. Query rewriting belongs to the Phase 8 agent.
+* In fast mode, follow-ups use conversation history for the answer but retrieval uses only the new question; agent mode (default) rewrites follow-ups before searching.
 * `cited_fraction` is a citation-coverage signal, not a groundedness check; claim-level evidence validation is Phase 11. Evaluation of retrieval/answer quality (Recall@K, MRR, faithfulness) is Phase 12.
 * Answers are returned whole (no token streaming yet).
 * The heuristic reranker is not a neural cross-encoder; see `app/rag/reranker.py` for why and how to plug one in.

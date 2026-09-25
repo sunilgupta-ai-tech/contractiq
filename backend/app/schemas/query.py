@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -18,6 +18,10 @@ class QueryRequest(BaseModel):
     version_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
     # Continue an existing conversation (follow-up questions); omit to start one.
     conversation_id: uuid.UUID | None = None
+    # "agent": rewrite follow-ups, split multi-part questions, retry weak
+    # searches (Phase 8). "fast": single search pass (Phase 7), lowest latency.
+    # Omit to use the server default (QUERY_MODE).
+    mode: Literal["agent", "fast"] | None = None
 
 
 class CitationOut(BaseModel):
@@ -56,6 +60,16 @@ class UsageOut(BaseModel):
     completion_tokens: int | None
 
 
+class AgentInfo(BaseModel):
+    """What the agent did (present when mode was "agent")."""
+
+    intent: str
+    standalone_question: str = Field(description="The question as the agent understood it.")
+    queries: list[str] = Field(description="Searches run, including refinements.")
+    retries: int
+    tool_calls: int
+
+
 class QueryResponse(BaseModel):
     id: uuid.UUID = Field(description="The assistant message id.")
     conversation_id: uuid.UUID
@@ -73,3 +87,5 @@ class QueryResponse(BaseModel):
     prompt_version: str
     latency_ms: int
     usage: UsageOut
+    mode: Literal["agent", "fast"]
+    agent: AgentInfo | None = None

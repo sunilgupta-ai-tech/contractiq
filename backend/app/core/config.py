@@ -133,6 +133,15 @@ class Settings(BaseSettings):
     # Previous question/answer pairs included for follow-up questions.
     conversation_history_turns: int = 3
 
+    # --- Agent (Phase 8) ---
+    # "agent" = LangGraph workflow (rewrite, decompose, retry); "fast" = the
+    # single-pass Phase 7 pipeline. A request can override it with `mode`.
+    query_mode: str = "agent"
+    agent_max_retries: int = 2  # refine-and-search-again rounds
+    agent_max_sub_questions: int = 3
+    agent_max_tool_calls: int = 12  # searches per question, across all retries
+    agent_timeout_s: float = 90.0  # whole run, including every model call
+
     # --- Embeddings (Phase 6) ---
     # Gemini by default (hosted; needs GEMINI_API_KEY). For fully local
     # development use EMBEDDING_PROVIDER=ollama, EMBEDDING_MODEL=nomic-embed-text.

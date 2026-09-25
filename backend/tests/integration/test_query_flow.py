@@ -128,13 +128,12 @@ def test_answer_is_cited_scoped_and_persisted(stack, cleanup):
     assert "8.3" in citation["clauses"] and citation["section"] == "8"
     assert citation["quote"] and citation["page"] >= 1
     assert data["insufficient_evidence"] is False and data["model"] == "scripted-llm"
+    # Agent mode (default): a standalone question needs no planning call.
+    assert data["mode"] == "agent" and data["agent"]["queries"] == [QUESTION]
     assert [s["key"] for s in data["steps"]] == [
-        "retrieve",
-        "rerank",
-        "context",
-        "generate",
-        "cite",
-    ]
+        "understand", "retrieve", "rerank", "validate", "context", "generate", "cite",
+    ]  # fmt: skip
+    assert len(llm.calls) == 1
 
     # The LLM read the whole section (small-to-big), inside the data delimiters.
     prompt = llm.calls[0][-1].content
@@ -208,3 +207,16 @@ def test_scope_and_conversation_ownership_are_enforced(stack, cleanup):
         json={"question": QUESTION, "conversation_id": conversation_id},
     )
     assert hijack.status_code == 404
+
+
+def test_fast_mode_skips_the_agent(stack, cleanup):
+    client, settings, llm = stack
+    tokens, _ = register(client, cleanup, "Query Org Fast")
+    _index_contract(settings, _tenant_of(client, tokens))
+    data = client.post(
+        "/api/v1/query", headers=auth(tokens), json={"question": QUESTION, "mode": "fast"}
+    ).json()["data"]
+    assert data["mode"] == "fast" and data["agent"] is None
+    steps = [s["key"] for s in data["steps"]]
+    assert steps == ["retrieve", "rerank", "context", "generate", "cite"]
+    assert data["citations"] and data["insufficient_evidence"] is False
