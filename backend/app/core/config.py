@@ -160,6 +160,23 @@ class Settings(BaseSettings):
     agent_max_tool_calls: int = 12  # searches per question, across all retries
     agent_timeout_s: float = 90.0  # whole run, including every model call
 
+    # --- Contract analysis (Phase 10) ---
+    # Clause extraction: for each standard topic, the best N chunks of the
+    # version are shown to the answer model (LLM_PROVIDER). Results are
+    # cached per version in storage (analysis/clauses.json).
+    analysis_evidence_per_topic: int = 4
+    analysis_concurrency: int = 4  # topic extractions in flight per document
+    # Multi-document requests (risk analysis, portfolio) analyse at most this
+    # many not-yet-analysed documents inline; the rest are queued for the
+    # worker and reported as pending.
+    analysis_sync_documents: int = 3
+    analysis_max_documents: int = 50  # documents per portfolio/risk request
+    # Risk-rule thresholds (policy, not model behaviour). Advisory only.
+    risk_max_notice_days: int = 60
+    risk_max_payment_days: int = 60
+    # e.g. "India"; unset disables the foreign-governing-law rule.
+    risk_home_jurisdiction: str | None = None
+
     # --- Embeddings (Phase 6) ---
     # Gemini by default (hosted; needs GEMINI_API_KEY). For fully local
     # development use EMBEDDING_PROVIDER=ollama, EMBEDDING_MODEL=nomic-embed-text.

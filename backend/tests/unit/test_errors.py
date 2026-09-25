@@ -1,5 +1,13 @@
-async def test_planned_endpoint_returns_501_envelope(client):
-    response = await client.post("/api/v1/contracts/compare")
+async def test_planned_endpoint_returns_501_envelope(app, client):
+    # Every planned endpoint is implemented as of Phase 10, so register one
+    # the way a future phase would, to keep the 501 envelope covered.
+    from app.core.exceptions import NotImplementedYetError
+
+    @app.post("/api/v1/planned")
+    async def planned() -> None:
+        raise NotImplementedYetError("A planned feature", 10)
+
+    response = await client.post("/api/v1/planned")
     assert response.status_code == 501
     body = response.json()
     assert body["success"] is False

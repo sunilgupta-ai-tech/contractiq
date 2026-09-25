@@ -21,6 +21,12 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | DELETE | `/documents/{id}` | 3 | live — 204; removes vectors, rows and files. ADMIN, LEGAL_MANAGER |
 | GET | `/jobs/{id}` | 3 | live — job status, attempts, per-stage timings |
 | POST | `/query` | 7–8 | live — cited answer over the tenant's contracts. `mode`: `agent` (default, LangGraph: rewrite, decompose, retry; docs/agentic-rag.md) or `fast` (single pass; docs/rag.md) |
-| POST | `/contracts/summarize`, `/contracts/extract-clauses`, `/contracts/compare`, `/contracts/risk-analysis`, `/contracts/portfolio-summary` | 10 | 501 |
+| POST | `/contracts/extract-clauses` | 10 | live — `{document_id, version_id?, refresh?}`; one entry per standard topic: verified quote, typed facts, location. Cached per version (docs/contract-analysis.md) |
+| POST | `/contracts/summarize` | 10 | live — same body; cited overview, obligations, key terms, key dates (incl. computed non-renewal deadline), risk counts |
+| POST | `/contracts/compare` | 10 | live — `{left_version_id, right_version_id}`; clauses aligned by topic, `same`/`changed`/`missing` with fact-level notes and risk. Versions of one contract or two different contracts |
+| POST | `/contracts/risk-analysis` | 10 | live — `{document_ids?}` or `{version_id}`; rule-based findings with evidence, most severe first; un-analysed documents are queued (`pending_document_ids`). Advisory |
+| POST | `/contracts/portfolio-summary` | 10 | live — `{document_ids?}`; per-contract key terms and risk, upcoming dates across the portfolio |
+
+`/contracts/*` needs `analysis:run` (ADMIN, LEGAL_MANAGER, ANALYST). A document that has not finished processing returns 409; ids from another organisation return 404.
 
 Every response carries `X-Request-ID`; send your own to correlate with upstream logs.

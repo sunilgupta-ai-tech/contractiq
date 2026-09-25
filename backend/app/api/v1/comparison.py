@@ -1,23 +1,29 @@
 """
-Contract and version comparison.
+Contract and version comparison (Phase 10).
 
-Implementation lands in Phase 10. The routes are registered now so the
-API contract is visible in OpenAPI and the frontend can integrate against it.
-Route handlers stay thin: validation in schemas, logic in services.
+Handlers stay thin: validation in schemas, logic in ComparisonService.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.core.exceptions import NotImplementedYetError
+from app.core.dependencies import AnalystDep, ComparisonServiceDep
+from app.schemas.analysis import CompareRequest, CompareResponse
+from app.schemas.common import ApiResponse
 
 router = APIRouter(tags=["contracts"])
-PHASE = 10
 
 
 @router.post(
-    "/contracts/compare", summary="Compare clauses across contracts or versions", status_code=501
+    "/contracts/compare",
+    summary="Compare clauses across contracts or versions",
+    response_model=ApiResponse[CompareResponse],
 )
-async def post_contracts_compare() -> None:
-    raise NotImplementedYetError("Compare clauses across contracts or versions", PHASE)
+async def post_contracts_compare(
+    _: AnalystDep, body: CompareRequest, service: ComparisonServiceDep
+) -> ApiResponse[CompareResponse]:
+    """Clauses aligned by topic (so renumbering doesn't matter), each row
+    `same`, `changed` (with the changed facts) or `missing`, and the risk a
+    change carries on the right-hand side."""
+    return ApiResponse(data=await service.compare(body))

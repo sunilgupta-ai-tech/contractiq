@@ -23,9 +23,12 @@ from app.core.resources import Resources
 from app.core.security import Permission, Role, decode_token, has_permission
 from app.services.audit_service import RequestMeta
 from app.services.auth_service import AuthService
+from app.services.comparison_service import ComparisonService
+from app.services.contract_service import ContractService
 from app.services.document_service import DocumentService
 from app.services.health_service import HealthService
 from app.services.query_service import QueryService
+from app.services.risk_service import RiskService
 from app.services.user_service import UserService
 
 _bearer = HTTPBearer(auto_error=False)
@@ -131,6 +134,27 @@ def get_query_service(
     )
 
 
+def get_contract_service(
+    user: Annotated[CurrentUser, Depends(require_permission(Permission.ANALYSIS_RUN))],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    resources: Annotated[Resources, Depends(get_resources)],
+) -> ContractService:
+    """Contract analysis (Phase 10), scoped to the caller's tenant."""
+    return ContractService(session, user.tenant_id, resources)
+
+
+def get_risk_service(
+    contracts: Annotated[ContractService, Depends(get_contract_service)],
+) -> RiskService:
+    return RiskService(contracts)
+
+
+def get_comparison_service(
+    contracts: Annotated[ContractService, Depends(get_contract_service)],
+) -> ComparisonService:
+    return ComparisonService(contracts)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
@@ -146,3 +170,7 @@ DocumentUploaderDep = Annotated[
 DocumentDeleterDep = Annotated[CurrentUser, Depends(require_permission(Permission.DOCUMENT_DELETE))]
 QueryRunnerDep = Annotated[CurrentUser, Depends(require_permission(Permission.QUERY_RUN))]
 QueryServiceDep = Annotated[QueryService, Depends(get_query_service)]
+AnalystDep = Annotated[CurrentUser, Depends(require_permission(Permission.ANALYSIS_RUN))]
+ContractServiceDep = Annotated[ContractService, Depends(get_contract_service)]
+RiskServiceDep = Annotated[RiskService, Depends(get_risk_service)]
+ComparisonServiceDep = Annotated[ComparisonService, Depends(get_comparison_service)]

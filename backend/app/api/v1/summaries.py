@@ -1,25 +1,29 @@
 """
-Portfolio-level summaries across many contracts.
+Portfolio-level summaries across many contracts (Phase 10).
 
-Implementation lands in Phase 10. The routes are registered now so the
-API contract is visible in OpenAPI and the frontend can integrate against it.
-Route handlers stay thin: validation in schemas, logic in services.
+Handlers stay thin: validation in schemas, logic in ContractService.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.core.exceptions import NotImplementedYetError
+from app.core.dependencies import AnalystDep, ContractServiceDep
+from app.schemas.analysis import PortfolioRequest, PortfolioResponse
+from app.schemas.common import ApiResponse
 
 router = APIRouter(tags=["contracts"])
-PHASE = 10
 
 
 @router.post(
     "/contracts/portfolio-summary",
     summary="Summarize obligations across a set of contracts",
-    status_code=501,
+    response_model=ApiResponse[PortfolioResponse],
 )
-async def post_contracts_portfolio_summary() -> None:
-    raise NotImplementedYetError("Summarize obligations across a set of contracts", PHASE)
+async def post_contracts_portfolio_summary(
+    _: AnalystDep, body: PortfolioRequest, service: ContractServiceDep
+) -> ApiResponse[PortfolioResponse]:
+    """Key terms, risk counts and upcoming dates (renewals, expiries, notice
+    deadlines) per contract and across the portfolio. Documents not analysed
+    yet are queued and listed in `pending_document_ids`."""
+    return ApiResponse(data=await service.portfolio(body))

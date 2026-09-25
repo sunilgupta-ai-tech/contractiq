@@ -14,6 +14,7 @@ import pytest
 from qdrant_client.http import models as qm
 from sqlalchemy import delete
 from worker.services import pipeline
+from worker.tasks.analysis import analyze_version
 from worker.tasks.document_processing import process_document
 
 from app.cache.redis import create_redis
@@ -56,6 +57,7 @@ class _Resources:
         self.redis = create_redis(self.settings)
         self.fake_embeddings = FakeEmbeddings(768)
         self.fake_vision = FakeVision()
+        self.fake_llm = ExtractingLLM()
         self.org_ids: list[uuid.UUID] = []  # created by _seed, deleted after the test
 
     def embeddings(self) -> FakeEmbeddings:
@@ -63,6 +65,9 @@ class _Resources:
 
     def vision(self) -> FakeVision:
         return self.fake_vision
+
+    def llm(self) -> "ExtractingLLM":
+        return self.fake_llm
 
 
 @pytest.fixture
@@ -241,6 +246,43 @@ async def test_embedding_cache_makes_reprocessing_free(env):
     _, version, _ = await _load(db, first)
     stats = version.extraction_metadata["embedding"]
     assert stats["cache_hits"] == stats["texts"] and stats["api_calls"] == 0
+
+
+class ExtractingLLM:
+    """Phase 10: reports the governing-law clause as found in excerpt 1 and
+    every other topic as absent."""
+
+    name, model = "fake", "extracting-llm"
+
+    async def generate(self, messages, *, temperature=0.0, max_tokens=1024):
+        from app.llm.base import LLMResult
+
+        found = messages[-1].content.startswith("Topic: Governing law")
+        reply = {"found": True, "excerpt": 1, "attributes": {"law": "England"}} if found else {}
+        return LLMResult(text=json.dumps(reply or {"found": False}), model=self.model)
+
+    async def aclose(self):
+        return None
+
+
+async def test_background_analysis_caches_the_version_analysis(env):
+    db, resources = env
+    job_id = await _seed(resources, pdf_factory.contract_pdf())
+    await process_document({"resources": resources}, job_id)
+    _, version, doc = await _load(db, job_id)
+    tenant, ids = str(doc.organization_id), (str(doc.id), str(version.id))
+
+    result = await analyze_version({"resources": resources}, tenant, *ids)
+    assert result["status"] == "completed" and result["clauses_found"] == 1
+    key = f"tenants/{tenant}/documents/{ids[0]}/{ids[1]}/analysis/clauses.json"
+    saved = json.loads(await resources.storage.get(key))
+    law = next(c for c in saved["clauses"] if c["topic"] == "governing_law")
+    assert law["found"] and law["attributes"]["law"] == "England"
+    assert law["evidence"]["version_id"] == ids[1]
+
+    # A job for a document that no longer exists (or another tenant) does nothing.
+    gone = await analyze_version({"resources": resources}, tenant, str(uuid.uuid4()), ids[1])
+    assert gone["status"] == "skipped"
 
 
 async def test_password_protected_pdf_fails_permanently_without_retry(env):

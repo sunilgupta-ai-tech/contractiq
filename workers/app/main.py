@@ -19,6 +19,7 @@ from app.core.logging import configure_logging, get_logger
 from app.core.resources import Resources
 from app.queue import QUEUE_NAME
 
+from .tasks.analysis import analyze_version
 from .tasks.document_processing import process_document
 from .tasks.embedding import reembed_tenant
 from .tasks.indexing import delete_document_vectors
@@ -40,7 +41,12 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 class WorkerSettings:
-    functions: ClassVar = [process_document, reembed_tenant, delete_document_vectors]
+    functions: ClassVar = [
+        process_document,
+        reembed_tenant,
+        delete_document_vectors,
+        analyze_version,
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

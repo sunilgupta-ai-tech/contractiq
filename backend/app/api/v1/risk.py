@@ -1,25 +1,29 @@
 """
-AI-assisted risk analysis. Output is advisory and must be reviewed by a qualified professional.
+AI-assisted risk analysis (Phase 10). Output is advisory and must be
+reviewed by a qualified professional.
 
-Implementation lands in Phase 10. The routes are registered now so the
-API contract is visible in OpenAPI and the frontend can integrate against it.
-Route handlers stay thin: validation in schemas, logic in services.
+Handlers stay thin: validation in schemas, logic in RiskService.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.core.exceptions import NotImplementedYetError
+from app.core.dependencies import AnalystDep, RiskServiceDep
+from app.schemas.analysis import RiskAnalysisRequest, RiskAnalysisResponse
+from app.schemas.common import ApiResponse
 
 router = APIRouter(tags=["contracts"])
-PHASE = 10
 
 
 @router.post(
     "/contracts/risk-analysis",
     summary="Flag potentially high-risk clauses with evidence",
-    status_code=501,
+    response_model=ApiResponse[RiskAnalysisResponse],
 )
-async def post_contracts_risk_analysis() -> None:
-    raise NotImplementedYetError("Flag potentially high-risk clauses with evidence", PHASE)
+async def post_contracts_risk_analysis(
+    _: AnalystDep, body: RiskAnalysisRequest, service: RiskServiceDep
+) -> ApiResponse[RiskAnalysisResponse]:
+    """Rule-based findings over extracted clauses, most severe first. Documents
+    not analysed yet are queued and listed in `pending_document_ids`."""
+    return ApiResponse(data=await service.analyze(body))
