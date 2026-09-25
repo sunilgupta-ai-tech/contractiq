@@ -1,0 +1,127 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * ContractIQ design tokens.
+ * Direction: "legal paper" — warm paper canvas, ink typography, a deep
+ * navy rail, verdigris as the single action color, and a highlighter
+ * amber reserved for cited evidence. Risk colors are used only for risk.
+ * Values are RGB triplets so Tailwind can apply alpha.
+ */
+@layer base {
+  :root {
+    --canvas: 246 244 239;
+    --surface: 255 255 255;
+    --sunken: 250 249 246;
+    --line: 231 227 218;
+    --line-strong: 212 206 194;
+    --ink: 22 24 29;
+    --ink-2: 74 79 90;
+    --ink-3: 128 133 143;
+    --brand: 14 124 102;
+    --brand-soft: 227 243 238;
+    --brand-ink: 9 84 69;
+    --rail: 17 27 46;
+    --rail-2: 27 40 66;
+    --rail-ink: 232 236 244;
+    --rail-mute: 139 151 174;
+    --mark: 252 236 186;
+    --danger: 180 35 24;
+    --danger-soft: 253 236 234;
+    --warn: 181 71 8;
+    --warn-soft: 254 243 226;
+    --ok: 6 118 71;
+    --ok-soft: 231 246 236;
+    --info: 38 84 170;
+    --info-soft: 232 239 252;
+    --shadow: 22 24 29;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas: 13 16 22;
+      --surface: 21 26 34;
+      --sunken: 17 21 28;
+      --line: 38 45 57;
+      --line-strong: 55 64 80;
+      --ink: 233 236 241;
+      --ink-2: 170 177 190;
+      --ink-3: 118 126 141;
+      --brand: 52 191 160;
+      --brand-soft: 16 52 46;
+      --brand-ink: 135 226 203;
+      --rail: 9 13 20;
+      --rail-2: 22 29 41;
+      --rail-ink: 232 236 244;
+      --rail-mute: 128 139 160;
+      --mark: 92 74 22;
+      --danger: 248 113 100;
+      --danger-soft: 64 24 22;
+      --warn: 245 166 80;
+      --warn-soft: 62 40 14;
+      --ok: 74 208 140;
+      --ok-soft: 16 50 34;
+      --info: 124 166 245;
+      --info-soft: 22 36 66;
+      --shadow: 0 0 0;
+      color-scheme: dark;
+    }
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans text-[14px] leading-6;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background: rgb(var(--mark));
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand/60 ring-offset-2 ring-offset-canvas;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-card;
+  }
+  .eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-[0.12em] text-ink-3;
+  }
+  .display {
+    @apply font-serif tracking-[-0.01em] text-ink;
+    font-variation-settings: "opsz" 72, "SOFT" 30;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Evidence highlight — the one place the amber "highlighter" appears. */
+  .cite-mark {
+    background: linear-gradient(transparent 12%, rgb(var(--mark)) 12%, rgb(var(--mark)) 88%, transparent 88%);
+    @apply rounded-[2px] px-0.5;
+  }
+  .skeleton {
+    @apply animate-shimmer rounded-md;
+    background: linear-gradient(90deg, rgb(var(--sunken)) 25%, rgb(var(--line)) 50%, rgb(var(--sunken)) 75%);
+    background-size: 200% 100%;
+  }
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

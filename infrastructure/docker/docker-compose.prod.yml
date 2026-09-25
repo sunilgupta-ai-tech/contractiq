@@ -1,0 +1,24 @@
+# Production-like override for a single host (staging smoke tests):
+#   docker compose -f docker-compose.yml -f infrastructure/docker/docker-compose.prod.yml up -d
+# Real production runs on ECS with managed RDS/ElastiCache — see docs/deployment.md.
+services:
+  backend:
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers"]
+    volumes: !reset []
+    environment:
+      APP_ENV: staging
+      LOG_JSON: "true"
+    restart: unless-stopped
+  worker:
+    environment:
+      APP_ENV: staging
+      LOG_JSON: "true"
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  qdrant:
+    ports: !reset []
