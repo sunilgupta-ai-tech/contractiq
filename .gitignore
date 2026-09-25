@@ -23,9 +23,9 @@ coverage/
 *.tsbuildinfo
 next-env.d.ts
 
-# Data
-data/
-storage/
+# Local data (root only — `storage/` alone also matched backend/app/storage source)
+/data/
+/storage/
 *.log
 
 # Worker local-run shim
