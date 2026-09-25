@@ -80,6 +80,7 @@ def chunk_payload(chunk: Chunk, target: IndexTarget) -> dict[str, Any]:
         "page": chunk.page_start,
         "page_end": chunk.page_end,
         "regions": [{"page": r.page, "bbox": list(r.bbox)} for r in chunk.regions],
+        "media_key": chunk.media_key,  # image-caption chunks: the image in storage
         # content
         "text": chunk.text,
         "token_count": chunk.token_count,

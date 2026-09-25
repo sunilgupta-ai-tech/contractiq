@@ -1,8 +1,9 @@
 """
 Export of meaningful embedded images (charts, diagrams, signatures, stamps).
 
-Phase 9 (multimodal RAG) will caption these images so questions like "what
-does the escalation diagram show?" can be answered. Phase 4 only saves them.
+Phase 9 (multimodal RAG) captions these images so questions like "what
+does the escalation diagram show?" can be answered (app/multimodal/). This
+module only selects and saves them.
 
 What is skipped, and why
 ------------------------

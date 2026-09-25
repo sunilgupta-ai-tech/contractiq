@@ -17,6 +17,9 @@ from typing import Literal, Protocol
 class ChatMessage:
     role: Literal["system", "user", "assistant"]
     content: str
+    # PNG bytes sent alongside `content` (Phase 9 image captioning). Only
+    # vision-capable models accept them; text-only models reject the request.
+    images: tuple[bytes, ...] = ()
 
 
 @dataclass(frozen=True)

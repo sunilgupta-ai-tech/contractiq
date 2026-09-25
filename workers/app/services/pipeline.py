@@ -7,6 +7,7 @@ stage the worker is executing. Stage handlers are filled in phase by phase:
 
     parse  (Phase 4)  PDF text layer, tables, images      -> artifacts["parse"]
     ocr    (Phase 4)  OCR scanned pages, layout, save JSON -> artifacts["parsed"]
+    describe (Phase 9) caption images, summarise tables, re-save parsed.json
     chunk  (Phase 5)  section/clause-aware chunks, save JSON -> artifacts["chunks"]
     embed  (Phase 6)  embeddings (Gemini by default), with cache  -> artifacts["vectors"]
     index  (Phase 6)  Qdrant upsert + prune, current-version flag
@@ -38,6 +39,7 @@ from app.services.chunking_service import (
     chunk_document,
 )
 from app.services.embedding_service import EmbeddingService
+from app.services.multimodal_service import enrich_document
 from app.services.ocr_service import ocr_scanned_pages
 from app.services.pdf_service import (
     ParseResult,
@@ -149,6 +151,36 @@ async def _ocr(ctx: StageContext) -> None:
     )
 
 
+async def _describe(ctx: StageContext) -> None:
+    """Caption images and summarise tables (Phase 9), then re-save
+    parsed.json with them, so re-chunking never repeats the model calls.
+
+    Never fails the document: see app/services/multimodal_service.py.
+    """
+    parsed: ParsedDocument | None = ctx.artifacts.get("parsed")
+    if parsed is None:
+        raw = await ctx.resources.storage.get(ctx.artifact_key("parsed.json"))
+        parsed = ParsedDocument.from_dict(json.loads(raw))
+        ctx.artifacts["parsed"] = parsed
+
+    result = await enrich_document(
+        parsed,
+        tenant_id=ctx.tenant_id,
+        settings=ctx.resources.settings,
+        provider_factory=ctx.resources.vision,
+        storage=ctx.resources.storage,
+        redis=ctx.resources.redis,
+    )
+    if result.stats.api_calls or result.stats.cache_hits:
+        parsed_key = ctx.artifact_key("parsed.json")
+        payload = json.dumps(parsed.to_dict(), ensure_ascii=False).encode()
+        await ctx.resources.storage.put(parsed_key, payload, "application/json")
+    metadata = ctx.version_updates.get("extraction_metadata")
+    if metadata is not None:
+        metadata["multimodal"] = asdict(result.stats)
+        metadata["warnings"] = metadata.get("warnings", []) + result.warnings
+
+
 async def _chunk(ctx: StageContext) -> None:
     """Split the parsed document into parent (section) and child (clause)
     chunks and save them as chunks.json — the input for embeddings (Phase 6).
@@ -257,6 +289,9 @@ async def _index(ctx: StageContext) -> None:
 PIPELINE: tuple[Stage, ...] = (
     Stage("parse", DocumentStatus.PROCESSING, _parse, 25),
     Stage("ocr", DocumentStatus.OCR_PROCESSING, _ocr, 45),
+    # Shown to users as part of content extraction: no new status, so no
+    # database enum migration and no change to the UI's stepper.
+    Stage("describe", DocumentStatus.OCR_PROCESSING, _describe, 55),
     Stage("chunk", DocumentStatus.CHUNKING, _chunk, 65),
     Stage("embed", DocumentStatus.EMBEDDING, _embed, 85),
     Stage("index", DocumentStatus.INDEXING, _index, 100),

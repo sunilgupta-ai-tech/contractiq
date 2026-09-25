@@ -52,7 +52,8 @@ POST /query  (role with query:run)
     "index": 1, "document_id": "…", "document_title": "Acme MSA",
     "version_id": "…", "version_label": "v2", "page": 12, "page_end": 12,
     "section": "8", "section_title": "Termination", "clause": "8.3", "clauses": ["8.3"],
-    "quote": "…", "score": 1.9, "regions": [{"page": 12, "bbox": [72, 300, 520, 340]}]
+    "quote": "…", "score": 1.9, "regions": [{"page": 12, "bbox": [72, 300, 520, 340]}],
+    "chunk_type": "text"
   }],
   "insufficient_evidence": false,
   "cited_fraction": 1.0,

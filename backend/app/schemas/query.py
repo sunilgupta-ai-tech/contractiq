@@ -45,6 +45,11 @@ class CitationOut(BaseModel):
     clauses: list[str] = Field(
         default_factory=list, description="Every clause number the cited text covers."
     )
+    chunk_type: str = Field(
+        default="text",
+        description="text | table | image_caption. An image_caption quote is a model-written "
+        "description of a figure, not contract wording.",
+    )
 
 
 class StepOut(BaseModel):

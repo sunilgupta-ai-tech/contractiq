@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from app.document_processing.parser import (
     NON_CONTENT_KINDS,
     BlockKind,
+    PageImage,
     ParsedDocument,
     ParsedPage,
     Table,
@@ -86,6 +87,13 @@ class Segment:
     heading_path: list[str]  # excludes the document title (added by the service)
     pieces: list[Piece] = field(default_factory=list)
     table: Table | None = None  # set when is_table
+    image: PageImage | None = None  # set for a captioned image (Phase 9)
+
+    @property
+    def standalone(self) -> bool:
+        """Tables and images are always their own chunk: never merged with
+        neighbouring text, never split by the sentence splitter."""
+        return self.is_table or self.image is not None
 
     @property
     def text(self) -> str:
@@ -179,6 +187,16 @@ def build_segments(doc: ParsedDocument) -> tuple[str | None, list[Segment]]:
                 segments.append(table_seg)
                 seen_content = True
                 continue
+            if isinstance(item, PageImage):
+                # Likewise a captioned image: one segment, in the clause it
+                # illustrates, so its chunk inherits that heading path.
+                flush()
+                image_seg = outline.new_segment()
+                image_seg.image = item
+                image_seg.pieces.append(Piece(image_text(item), page.number, item.bbox))
+                segments.append(image_seg)
+                seen_content = True
+                continue
 
             block = item
             piece = Piece(block.text, page.number, block.bbox)
@@ -205,15 +223,25 @@ def build_segments(doc: ParsedDocument) -> tuple[str | None, list[Segment]]:
     return title, segments
 
 
-def _page_items(page: ParsedPage) -> list[TextBlock | Table]:
+def image_text(image: PageImage) -> str:
+    """How a captioned image reads as chunk text: '[Image: signature] Handwritten ...'.
+    The bracketed label tells the answering model (and the user reading a
+    citation) that this text describes a figure rather than quotes the contract."""
+    return f"[Image: {image.kind or 'other'}] {image.caption}"
+
+
+def _page_items(page: ParsedPage) -> list[TextBlock | Table | PageImage]:
     """A page's content in reading order: text blocks (minus headers, footers
-    and table-cell text) with each table inserted where it sits vertically."""
+    and table-cell text) with each table and captioned image inserted where
+    it sits vertically. Uncaptioned images (decorative, or not described)
+    are left out."""
     blocks = [b for b in page.blocks if b.kind not in NON_CONTENT_KINDS]
-    tables = sorted(page.tables, key=lambda t: t.bbox[1])
-    items: list[TextBlock | Table] = []
+    inserts: list[Table | PageImage] = [*page.tables, *(i for i in page.images if i.caption)]
+    inserts.sort(key=lambda item: item.bbox[1])
+    items: list[TextBlock | Table | PageImage] = []
     for block in blocks:
-        while tables and tables[0].bbox[1] <= block.bbox[1]:
-            items.append(tables.pop(0))
+        while inserts and inserts[0].bbox[1] <= block.bbox[1]:
+            items.append(inserts.pop(0))
         items.append(block)
-    items.extend(tables)
+    items.extend(inserts)
     return items

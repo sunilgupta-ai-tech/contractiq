@@ -26,6 +26,30 @@ def create_llm(settings: Settings) -> LLMProvider:
     )
 
 
+def create_vision(settings: Settings) -> LLMProvider:
+    """The image-captioning model chosen by VISION_PROVIDER / VISION_MODEL.
+
+    The same provider classes as answer generation: they send
+    `ChatMessage.images` to any vision-capable model.
+    Raises LLMConfigError if Gemini is selected without a key.
+    """
+    if settings.vision_provider is LLMProviderName.GEMINI:
+        if not settings.gemini_api_key:
+            raise LLMConfigError("GEMINI_API_KEY is required when VISION_PROVIDER=gemini")
+        from app.llm.gemini import GeminiProvider
+
+        return GeminiProvider(
+            settings.gemini_api_key.get_secret_value(),
+            settings.vision_model,
+            timeout_s=settings.vision_timeout_s,
+        )
+    from app.llm.ollama import OllamaProvider
+
+    return OllamaProvider(
+        settings.ollama_base_url, settings.vision_model, timeout_s=settings.vision_timeout_s
+    )
+
+
 def create_embeddings(settings: Settings) -> EmbeddingProvider:
     """The embedding provider chosen by EMBEDDING_PROVIDER (gemini | ollama).
 

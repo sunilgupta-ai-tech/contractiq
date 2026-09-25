@@ -27,7 +27,7 @@ Stored per version, under `tenants/{tenant}/documents/{document}/{version}/`:
 |---|---|
 | `original.pdf` | the upload |
 | `parsed.json` | `ParsedDocument.to_dict()` — input for Phase 5 chunking |
-| `images/page-{n}-{i}.png` | embedded images ≥150 px, for Phase 9 multimodal |
+| `images/page-{n}-{i}.png` | embedded images ≥150 px, captioned in Phase 9 ([multimodal.md](multimodal.md)) |
 
 Written to the `document_versions` row: `page_count`, `is_scanned`, and `extraction_metadata` (pages, scanned pages, table/image counts, mean OCR confidence, warnings, engine versions, `parsed_key`).
 

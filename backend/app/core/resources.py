@@ -20,7 +20,7 @@ from app.core.config import Settings
 from app.core.logging import get_logger
 from app.db.database import Database
 from app.llm.base import EmbeddingProvider, LLMProvider
-from app.llm.factory import create_embeddings, create_llm
+from app.llm.factory import create_embeddings, create_llm, create_vision
 from app.queue import create_queue
 from app.storage import ObjectStorage, create_storage
 from app.vectorstore.collections import ensure_collection
@@ -41,6 +41,16 @@ class Resources:
     # GEMINI_API_KEY must not stop the API from booting in development.
     _embeddings: EmbeddingProvider | None = field(default=None, repr=False)
     _llm: LLMProvider | None = field(default=None, repr=False)
+    _vision: LLMProvider | None = field(default=None, repr=False)
+
+    def vision(self) -> LLMProvider:
+        """The image-captioning model (Phase 9), created on first use.
+
+        Raises LLMConfigError if it is misconfigured (e.g. no API key).
+        """
+        if self._vision is None:
+            self._vision = create_vision(self.settings)
+        return self._vision
 
     def llm(self) -> LLMProvider:
         """The configured answer-generation model, created on first use.
@@ -92,3 +102,5 @@ class Resources:
             await self._embeddings.aclose()
         if self._llm is not None:
             await self._llm.aclose()
+        if self._vision is not None:
+            await self._vision.aclose()

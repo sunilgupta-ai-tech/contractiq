@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import time
 
 import httpx
@@ -49,7 +50,7 @@ class OllamaProvider:
                 "/api/chat",
                 json={
                     "model": self.model,
-                    "messages": [{"role": m.role, "content": m.content} for m in messages],
+                    "messages": [_message(m) for m in messages],
                     "stream": False,
                     "options": {"temperature": temperature, "num_predict": max_tokens},
                 },
@@ -68,6 +69,15 @@ class OllamaProvider:
             completion_tokens=body.get("eval_count"),
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
         )
+
+
+def _message(message: ChatMessage) -> dict[str, object]:
+    """Ollama takes images as a list of base64 strings on the message; a
+    vision model (e.g. qwen2.5vl, llava) must be pulled for them to be read."""
+    body: dict[str, object] = {"role": message.role, "content": message.content}
+    if message.images:
+        body["images"] = [base64.b64encode(image).decode() for image in message.images]
+    return body
 
 
 class OllamaEmbeddings:

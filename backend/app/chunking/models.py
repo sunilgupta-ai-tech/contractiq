@@ -11,7 +11,9 @@ Two levels (small-to-big retrieval)
   surrounding clauses (definitions, exceptions, "subject to 8.4 ...").
 
 Every child has `parent_id`. Tables are CHILD chunks of type TABLE whose text
-is markdown, so rows and columns survive into the prompt.
+is markdown, so rows and columns survive into the prompt. Captioned images
+(Phase 9) are CHILD chunks of type IMAGE_CAPTION whose text is the caption
+and whose region is the image's position on its page.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ class ChunkLevel(StrEnum):
 class ChunkType(StrEnum):
     TEXT = "text"
     TABLE = "table"
-    # IMAGE_CAPTION = "image_caption" is added in Phase 9 (multimodal).
+    IMAGE_CAPTION = "image_caption"
 
 
 @dataclass
@@ -73,6 +75,9 @@ class Chunk:
     page_start: int
     page_end: int
     regions: list[SourceRegion] = field(default_factory=list)
+    # IMAGE_CAPTION only: storage key of the image the caption describes, so
+    # a citation can show the figure itself.
+    media_key: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

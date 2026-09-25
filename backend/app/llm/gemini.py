@@ -4,6 +4,7 @@ production use."""
 
 from __future__ import annotations
 
+import base64
 import time
 
 import httpx
@@ -61,7 +62,7 @@ class GeminiProvider:
         started = time.perf_counter()
         system = "\n\n".join(m.content for m in messages if m.role == "system")
         contents = [
-            {"role": "model" if m.role == "assistant" else "user", "parts": [{"text": m.content}]}
+            {"role": "model" if m.role == "assistant" else "user", "parts": _parts(m)}
             for m in messages
             if m.role != "system"
         ]
@@ -95,6 +96,18 @@ class GeminiProvider:
             completion_tokens=usage.get("candidatesTokenCount"),
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
         )
+
+
+def _parts(message: ChatMessage) -> list[dict[str, object]]:
+    """Images first, then the text: Google recommends image-before-prompt
+    ordering for single-image requests. Images travel inline (base64), which
+    suits contract figures — far below the 20 MB inline request limit."""
+    parts: list[dict[str, object]] = [
+        {"inlineData": {"mimeType": "image/png", "data": base64.b64encode(image).decode()}}
+        for image in message.images
+    ]
+    parts.append({"text": message.content})
+    return parts
 
 
 class GeminiEmbeddings:

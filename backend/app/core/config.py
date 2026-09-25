@@ -101,6 +101,24 @@ class Settings(BaseSettings):
     max_images_per_document: int = 200
     min_image_dimension_px: int = 150
 
+    # --- Multimodal (worker, Phase 9) ---
+    # Images are captioned and tables summarised by the vision model, so both
+    # become searchable. Enrichment only: if the model is unavailable the
+    # document is still indexed, without captions (and says so in metadata).
+    multimodal_enabled: bool = True
+    # Gemini by default. For local use: VISION_PROVIDER=ollama and a pulled
+    # vision model, e.g. VISION_MODEL=qwen2.5vl:7b (or llava:7b).
+    vision_provider: LLMProviderName = LLMProviderName.GEMINI
+    vision_model: str = "gemini-2.5-flash"
+    vision_timeout_s: float = 60.0
+    vision_concurrency: int = 4  # model calls in flight per document
+    vision_max_retries: int = 3  # for rate limits / 5xx / timeouts
+    table_summaries_enabled: bool = True
+    max_table_summaries_per_document: int = 100
+    # Captions/summaries cached in Redis by content hash (per tenant), so a
+    # new version with the same figures costs nothing. 0 disables.
+    caption_cache_ttl_s: int = 30 * 24 * 3600
+
     # --- Chunking (worker, Phase 5) ---
     # Sizes are *estimated* tokens (~4 chars each; see app/chunking/tokens.py).
     chunk_max_tokens: int = 400  # child chunk: about one clause
@@ -195,7 +213,10 @@ class Settings(BaseSettings):
             raise ValueError("AWS_S3_BUCKET is required when STORAGE_BACKEND=s3")
         if any(origin == "*" for origin in self.cors_origins):
             raise ValueError("Wildcard CORS origins are not allowed outside development")
-        uses_gemini = LLMProviderName.GEMINI in (self.embedding_provider, self.llm_provider)
+        providers = [self.embedding_provider, self.llm_provider]
+        if self.multimodal_enabled:
+            providers.append(self.vision_provider)
+        uses_gemini = LLMProviderName.GEMINI in providers
         if uses_gemini and not self.gemini_api_key:
             raise ValueError("GEMINI_API_KEY is required when a Gemini provider is selected")
         return self

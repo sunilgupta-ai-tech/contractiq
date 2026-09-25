@@ -74,6 +74,10 @@ class Table:
 
     bbox: BBox
     rows: list[list[str]]
+    # One or two sentences on what the table is for (Phase 9), e.g. "Payment
+    # milestones with due weeks and fees". Embedded with the table so it is
+    # found by meaning ("when is the go-live payment due?"), not only cells.
+    summary: str | None = None
 
     def to_markdown(self) -> str:
         """Markdown keeps the row/column structure intact when the table is
@@ -101,6 +105,11 @@ class PageImage:
     width_px: int
     height_px: int
     storage_key: str | None = None
+    # Filled by the vision model in Phase 9. `kind` is one of IMAGE_KINDS in
+    # app/multimodal/image_processor.py; `caption` is None for decorative
+    # images (logos, borders) and for images that could not be described.
+    kind: str | None = None
+    caption: str | None = None
 
 
 @dataclass
@@ -156,7 +165,10 @@ class ParsedDocument:
                     )
                     for b in p["blocks"]
                 ],
-                tables=[Table(bbox=tuple(t["bbox"]), rows=t["rows"]) for t in p["tables"]],
+                tables=[
+                    Table(bbox=tuple(t["bbox"]), rows=t["rows"], summary=t.get("summary"))
+                    for t in p["tables"]
+                ],
                 images=[PageImage(**{**i, "bbox": tuple(i["bbox"])}) for i in p["images"]],
                 is_scanned=p["is_scanned"],
                 ocr_confidence=p["ocr_confidence"],

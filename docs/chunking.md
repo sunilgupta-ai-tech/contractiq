@@ -10,7 +10,8 @@ parsed.json (Phase 4)
    ├─ structure.build_segments   outline from headings + numbering → segments
    ├─ merge                      tiny segments join their neighbour (same section only)
    ├─ splitter.split_pieces      long segments → windows: paragraph > sentence > word
-   ├─ children                   ≈ one clause each; tables = own TABLE chunks (markdown)
+   ├─ children                   ≈ one clause each; tables = own TABLE chunks (markdown);
+   │                             captioned images = own IMAGE_CAPTION chunks (Phase 9)
    ├─ parents                    one per section (split if > parent limit)
    │
    └─ chunks.json  (+ version.chunk_count)  →  embeddings (Phase 6)

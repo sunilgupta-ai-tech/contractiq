@@ -100,3 +100,4 @@ class Citation:
     score: float
     regions: list[dict[str, Any]] = field(default_factory=list)
     clauses: list[str] = field(default_factory=list)  # all clauses the cited text covers
+    chunk_type: str = "text"  # text | table | image_caption (Phase 9)

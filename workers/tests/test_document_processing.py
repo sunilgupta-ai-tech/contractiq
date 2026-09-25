@@ -33,6 +33,7 @@ from app.vectorstore.collections import ensure_collection
 from app.vectorstore.qdrant import create_qdrant, tenant_filter
 from tests import pdf_factory
 from tests.fake_embeddings import FakeEmbeddings
+from tests.fake_vision import CAPTION, TABLE_SUMMARY, FakeVision
 
 pytestmark = pytest.mark.skipif(
     os.getenv("CONTRACTIQ_INTEGRATION") != "1", reason="set CONTRACTIQ_INTEGRATION=1"
@@ -43,8 +44,8 @@ class _Resources:
     """The subset of app Resources the pipeline uses.
 
     Real Postgres, Redis and Qdrant; a throwaway Qdrant collection; local
-    storage in a temp dir; and the deterministic fake embedder instead of
-    Gemini (no API key or network needed).
+    storage in a temp dir; and deterministic fake embedding and vision
+    models instead of Gemini (no API key or network needed).
     """
 
     def __init__(self, db: Database, storage: LocalObjectStorage, collection: str) -> None:
@@ -54,10 +55,14 @@ class _Resources:
         self.qdrant = create_qdrant(self.settings)
         self.redis = create_redis(self.settings)
         self.fake_embeddings = FakeEmbeddings(768)
+        self.fake_vision = FakeVision()
         self.org_ids: list[uuid.UUID] = []  # created by _seed, deleted after the test
 
     def embeddings(self) -> FakeEmbeddings:
         return self.fake_embeddings
+
+    def vision(self) -> FakeVision:
+        return self.fake_vision
 
 
 @pytest.fixture
@@ -155,7 +160,7 @@ async def test_pipeline_parses_pdf_and_records_results(env):
 
     assert result["status"] == "COMPLETED"
     assert job.status is JobStatus.SUCCEEDED and job.progress == 100
-    assert set(job.stage_timings_ms) == {"parse", "ocr", "chunk", "embed", "index"}
+    assert set(job.stage_timings_ms) == {"parse", "ocr", "describe", "chunk", "embed", "index"}
     assert version.status is DocumentStatus.COMPLETED and doc.status is DocumentStatus.COMPLETED
     assert doc.current_version_id == version.id
 
@@ -177,6 +182,20 @@ async def test_pipeline_parses_pdf_and_records_results(env):
     assert meta["parent_chunks"] >= 1 and meta["chunker_version"] == chunks["chunker_version"]
     # The user's document title roots every heading path.
     assert all(c["heading_path"][0] == "Acme MSA" for c in children)
+
+    # Phase 9: the image is captioned and the table summarised (in parsed.json),
+    # the caption is its own chunk cited at the image's position on page 3,
+    # and the table summary is embedded but not shown as the table's text.
+    assert meta["multimodal"]["images_captioned"] == 1
+    assert meta["multimodal"]["tables_summarised"] == 1
+    assert parsed["pages"][2]["images"][0]["caption"] == CAPTION
+    assert parsed["pages"][1]["tables"][0]["summary"] == TABLE_SUMMARY
+    (caption,) = [c for c in children if c["chunk_type"] == "image_caption"]
+    assert caption["text"] == f"[Image: chart] {CAPTION}"
+    assert caption["page_start"] == 3 and caption["media_key"] == image_key
+    assert caption["regions"][0]["bbox"] == parsed["pages"][2]["images"][0]["bbox"]
+    (table,) = [c for c in children if c["chunk_type"] == "table"]
+    assert TABLE_SUMMARY in table["embedding_text"] and TABLE_SUMMARY not in table["text"]
 
     # Phase 6: every chunk is a Qdrant point in this tenant, marked current.
     collection = resources.settings.qdrant_collection
@@ -213,9 +232,12 @@ async def test_embedding_cache_makes_reprocessing_free(env):
     first = await _seed(resources, pdf_factory.contract_pdf())
     await process_document({"resources": resources}, first)
     calls_after_first = len(resources.fake_embeddings.calls)
+    vision_calls_after_first = len(resources.fake_vision.calls)
     # Same tenant, same text again (e.g. a retried job): served from Redis.
     await process_document({"resources": resources}, first)
     assert len(resources.fake_embeddings.calls) == calls_after_first
+    # Captions and table summaries are cached the same way (Phase 9).
+    assert len(resources.fake_vision.calls) == vision_calls_after_first
     _, version, _ = await _load(db, first)
     stats = version.extraction_metadata["embedding"]
     assert stats["cache_hits"] == stats["texts"] and stats["api_calls"] == 0
@@ -252,5 +274,5 @@ async def test_transient_stage_failure_marks_job_failed_and_reraises(env, monkey
     assert job.error_message == "RuntimeError in stage chunk"
     assert version.error_message == "Processing failed. See job logs for details."
     assert doc.status is DocumentStatus.FAILED
-    assert set(job.stage_timings_ms) == {"parse", "ocr"}
+    assert set(job.stage_timings_ms) == {"parse", "ocr", "describe"}
     assert version.page_count == 3  # results of completed stages are kept

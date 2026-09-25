@@ -83,6 +83,7 @@ def _citation(index: int, block: EvidenceBlock) -> Citation:
         score=round(chunk.rerank_score if chunk.rerank_score is not None else chunk.score, 4),
         regions=chunk.regions,
         clauses=chunk.clauses,
+        chunk_type=chunk.chunk_type,
     )
 
 

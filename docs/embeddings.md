@@ -45,7 +45,7 @@ Outside `development`, the app refuses to start if a Gemini provider is selected
 
 ## Point payload (per chunk)
 
-`tenant_id`, `document_id`, `version_id`, `version_label`, `chunk_id`, `parent_id`, `level` (child/parent), `chunk_type`, `document_title`, `contract_type`, `is_current`, `section`, `section_title`, `clause`, `clause_title`, `clauses`, `heading_path`, `page`, `page_end`, `regions`, `text`, `token_count`, `embedding_model` (`provider:model:dimension`), `chunker_version`.
+`tenant_id`, `document_id`, `version_id`, `version_label`, `chunk_id`, `parent_id`, `level` (child/parent), `chunk_type`, `document_title`, `contract_type`, `is_current`, `section`, `section_title`, `clause`, `clause_title`, `clauses`, `heading_path`, `page`, `page_end`, `regions`, `media_key` (image-caption chunks, Phase 9), `text`, `token_count`, `embedding_model` (`provider:model:dimension`), `chunker_version`.
 
 Indexed for filtering: `tenant_id` (tenant-partitioned), `document_id`, `version_id`, `contract_type`, `section`, `clause`, `chunk_type`, `page`, `level`, `is_current`, `embedding_model`. Missing indexes are added to an existing collection on startup.
 

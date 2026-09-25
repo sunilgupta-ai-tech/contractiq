@@ -7,6 +7,7 @@ Steps (each is explained where it happens below):
     2. _merge_small()        tiny neighbouring segments in one section are merged
     3. children              each merged group -> 1+ CHILD chunks (split if long);
                              each table -> its own TABLE child (split by rows if long)
+                             each captioned image -> its own IMAGE_CAPTION child
     4. parents               each section -> 1+ PARENT chunks (split if very long)
     5. linking               every child gets the id of the parent holding its text
 
@@ -33,7 +34,7 @@ from app.document_processing.parser import ParsedDocument, Table
 
 # Bump when chunking rules change, so stored chunks.json files record which
 # rules produced them (and stale ones can be found and re-chunked).
-CHUNKER_VERSION = 1
+CHUNKER_VERSION = 2  # 2: image-caption chunks, table summaries (Phase 9)
 
 
 @dataclass(frozen=True)
@@ -122,7 +123,7 @@ def _merge_small(segments: list[Segment], options: ChunkingOptions) -> list[list
         return sum(estimate_tokens(segments[i].text) for i in indexes)
 
     for index, seg in enumerate(segments):
-        if seg.is_table:
+        if seg.standalone:
             continue
         if seg.section_key != last_key and pending:
             _attach_leftover(groups, pending, segments, size, options)
@@ -168,9 +169,9 @@ def _build_children(
     title: str | None,
     options: ChunkingOptions,
 ) -> list[Chunk]:
-    # Text groups and tables, back in reading order (by first segment index).
+    # Text groups, tables and images, back in reading order (by first segment index).
     units: list[tuple[int, list[int]]] = [(g[0], g) for g in _merge_small(segments, options)]
-    units += [(i, [i]) for i, s in enumerate(segments) if s.is_table]
+    units += [(i, [i]) for i, s in enumerate(segments) if s.standalone]
     units.sort(key=lambda u: u[0])
 
     children: list[Chunk] = []
@@ -185,6 +186,10 @@ def _build_children(
             windows = [(text, [0]) for text in _split_table(segs[0].table, options.max_tokens)]
             pieces = segs[0].pieces
             chunk_type = ChunkType.TABLE
+        elif segs[0].image is not None:
+            pieces = segs[0].pieces
+            windows = [(pieces[0].text, [0])]  # captions are length-capped: never split
+            chunk_type = ChunkType.IMAGE_CAPTION
         else:
             pieces = [p for s in segs for p in s.pieces]
             split = split_pieces(
@@ -193,6 +198,9 @@ def _build_children(
             windows = [(w.text, w.source_indexes) for w in split]
             chunk_type = ChunkType.TEXT
         path = _path(title, lead)
+        # A table's summary (Phase 9) is embedded with every part of the table,
+        # so it is found by meaning; the displayed/quoted text stays the table.
+        summary = segs[0].table.summary if segs[0].table is not None else None
         for text, sources in windows:
             used = [pieces[i] for i in sources]
             ordinal = len(children)
@@ -206,7 +214,7 @@ def _build_children(
                     # The heading path gives the embedding context the chunk
                     # text lacks: "within the notice period" is ambiguous
                     # alone, clear under "8. Termination > 8.3 Notice Period".
-                    embedding_text=" > ".join(path) + "\n\n" + text if path else text,
+                    embedding_text=_embedding_text(path, summary, text),
                     token_count=estimate_tokens(text),
                     parent_id=parent_of_segment.get(first),
                     section=lead.section,
@@ -218,9 +226,14 @@ def _build_children(
                     page_start=min(p.page for p in used),
                     page_end=max(p.page for p in used),
                     regions=_regions(used),
+                    media_key=segs[0].image.storage_key if segs[0].image else None,
                 )
             )
     return children
+
+
+def _embedding_text(path: list[str], summary: str | None, text: str) -> str:
+    return "\n\n".join(part for part in (" > ".join(path), summary, text) if part)
 
 
 def _split_table(table: Table, max_tokens: int) -> list[str]:
