@@ -29,7 +29,6 @@ from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from fastapi import UploadFile
-from qdrant_client.http import models as qm
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,7 +65,7 @@ from app.schemas.document import (
 )
 from app.services.audit_service import RequestMeta, record_audit
 from app.storage import build_object_key, document_prefix
-from app.vectorstore.qdrant import tenant_filter
+from app.vectorstore.indexing import delete_document_points
 
 if TYPE_CHECKING:
     from app.core.resources import Resources
@@ -353,12 +352,11 @@ class DocumentService:
         # Vectors first: once this succeeds nothing about the document can be
         # retrieved, even if a later step fails and the user retries.
         try:
-            await self.resources.qdrant.delete(
-                collection_name=self.resources.settings.qdrant_collection,
-                points_selector=qm.FilterSelector(
-                    filter=tenant_filter(str(self.tenant_id), document_ids=[str(document.id)])
-                ),
-                wait=True,
+            await delete_document_points(
+                self.resources.qdrant,
+                self.resources.settings.qdrant_collection,
+                tenant_id=str(self.tenant_id),
+                document_id=str(document.id),
             )
         except Exception as exc:
             raise ServiceUnavailableError(

@@ -8,8 +8,8 @@ stage the worker is executing. Stage handlers are filled in phase by phase:
     parse  (Phase 4)  PDF text layer, tables, images      -> artifacts["parse"]
     ocr    (Phase 4)  OCR scanned pages, layout, save JSON -> artifacts["parsed"]
     chunk  (Phase 5)  section/clause-aware chunks, save JSON -> artifacts["chunks"]
-    embed  (Phase 6)  embeddings
-    index  (Phase 6)  Qdrant upsert
+    embed  (Phase 6)  embeddings (Gemini by default), with cache  -> artifacts["vectors"]
+    index  (Phase 6)  Qdrant upsert + prune, current-version flag
 
 Stages communicate only through `StageContext`: `artifacts` carries data to
 the next stage in memory, and `version_updates` collects fields that
@@ -23,18 +23,21 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from app.chunking.models import Chunk
 from app.db.models import DocumentStatus
 from app.document_processing.parser import ParsedDocument
 from app.document_processing.pymupdf_parser import to_page_image
+from app.llm.base import EmbeddingProvider
 from app.services.chunking_service import (
     CHUNKER_VERSION,
     ChunkingOptions,
     ChunkingResult,
     chunk_document,
 )
+from app.services.embedding_service import EmbeddingService
 from app.services.ocr_service import ocr_scanned_pages
 from app.services.pdf_service import (
     ParseResult,
@@ -44,6 +47,13 @@ from app.services.pdf_service import (
     parse_pdf,
 )
 from app.storage import build_object_key
+from app.vectorstore.collections import check_dimension
+from app.vectorstore.indexing import (
+    IndexTarget,
+    build_points,
+    mark_current_version,
+    upsert_version,
+)
 
 StageHandler = Callable[["StageContext"], Awaitable[None]]
 
@@ -60,6 +70,10 @@ class StageContext:
     # The title the user gave the document; used as the root of every
     # chunk's heading path ("Master Services Agreement > 8. Termination").
     document_title: str | None = None
+    # Copied into every Qdrant point's payload (Phase 6).
+    version_label: str = "v1"
+    contract_type: str = "OTHER"
+    is_latest_version: bool = True
     artifacts: dict[str, Any] = field(default_factory=dict)
     # Column name -> value, applied to the DocumentVersion row by the task.
     version_updates: dict[str, Any] = field(default_factory=dict)
@@ -173,16 +187,76 @@ async def _chunk(ctx: StageContext) -> None:
         )
 
 
+async def _load_chunks(ctx: StageContext) -> ChunkingResult:
+    """Chunks from the previous stage, or from chunks.json when this stage
+    runs on its own (e.g. re-embedding after an embedding-model change)."""
+    chunks: ChunkingResult | None = ctx.artifacts.get("chunks")
+    if chunks is None:
+        raw = json.loads(await ctx.resources.storage.get(ctx.artifact_key("chunks.json")))
+        chunks = ChunkingResult(chunks=[Chunk.from_dict(c) for c in raw["chunks"]])
+        ctx.artifacts["chunks"] = chunks
+    return chunks
+
+
+def _model_label(provider: EmbeddingProvider) -> str:
+    """Recorded on every point; search only compares vectors with the same label."""
+    return f"{provider.name}:{provider.model}:{provider.dimension}"
+
+
 async def _embed(ctx: StageContext) -> None:
-    """Phase 6: batch embeddings via EmbeddingProvider."""
+    """Embed every child chunk (Gemini by default) via EmbeddingService,
+    which batches, retries and caches. Parents are not embedded — they are
+    never searched, only read."""
+    chunks = await _load_chunks(ctx)
+    provider = ctx.resources.embeddings()
+    service = EmbeddingService(provider, ctx.resources.settings, ctx.resources.redis)
+    vectors, stats = await service.embed_documents(
+        [c.embedding_text for c in chunks.children], tenant_id=ctx.tenant_id
+    )
+    ctx.artifacts.update(vectors=vectors, embedding_model=_model_label(provider))
+    metadata = ctx.version_updates.get("extraction_metadata")
+    if metadata is not None:
+        metadata.update(embedding_model=_model_label(provider), embedding=asdict(stats))
 
 
 async def _index(ctx: StageContext) -> None:
-    """Phase 6: delete this version's old points, then upsert new ones.
+    """Write this version's points to Qdrant and, if it is the newest version,
+    make it the document's current (searched-by-default) version.
 
-    Delete-then-upsert keyed by version_id makes re-processing idempotent:
-    a retried job can never leave duplicate chunks in Qdrant.
+    Upsert-then-prune by deterministic chunk id makes re-processing
+    idempotent and gap-free: a retried job can never leave duplicate chunks,
+    and the version never disappears from search while being re-indexed.
     """
+    settings = ctx.resources.settings
+    client, collection = ctx.resources.qdrant, settings.qdrant_collection
+    # Clear error if EMBEDDING_DIMENSION no longer matches the collection.
+    await check_dimension(client, collection, settings.embedding_dimension)
+
+    chunks = await _load_chunks(ctx)
+    target = IndexTarget(
+        tenant_id=ctx.tenant_id,
+        document_id=ctx.document_id,
+        version_id=ctx.version_id,
+        version_label=ctx.version_label,
+        document_title=ctx.document_title,
+        contract_type=ctx.contract_type,
+        is_current=ctx.is_latest_version,
+        embedding_model=ctx.artifacts["embedding_model"],
+        chunker_version=CHUNKER_VERSION,
+    )
+    points = build_points(chunks.children, ctx.artifacts["vectors"], chunks.parents, target)
+    written = await upsert_version(client, collection, target, points)
+    if ctx.is_latest_version:
+        await mark_current_version(
+            client,
+            collection,
+            tenant_id=ctx.tenant_id,
+            document_id=ctx.document_id,
+            version_id=ctx.version_id,
+        )
+    metadata = ctx.version_updates.get("extraction_metadata")
+    if metadata is not None:
+        metadata["indexed_points"] = written
 
 
 PIPELINE: tuple[Stage, ...] = (
@@ -192,3 +266,13 @@ PIPELINE: tuple[Stage, ...] = (
     Stage("embed", DocumentStatus.EMBEDDING, _embed, 85),
     Stage("index", DocumentStatus.INDEXING, _index, 100),
 )
+
+
+async def embed_and_index(ctx: StageContext) -> None:
+    """Run only the embed + index stages from the saved chunks.json.
+
+    Used to re-embed documents after the embedding model changes, without
+    repeating parsing, OCR or chunking.
+    """
+    await _embed(ctx)
+    await _index(ctx)

@@ -14,6 +14,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger, tenant_id_ctx
@@ -81,6 +82,16 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         assert document is not None
         tenant_id_ctx.set(str(job.organization_id))
 
+        # Is this the document's newest version? Only the newest becomes the
+        # "current" one (searched by default); re-processing an older version
+        # must not demote a newer one.
+        newest = await session.scalar(
+            select(func.max(DocumentVersion.version_number)).where(
+                DocumentVersion.document_id == document.id
+            )
+        )
+        is_latest = version.version_number >= (newest or 0)
+
         stage_ctx = StageContext(
             tenant_id=str(job.organization_id),
             document_id=str(document.id),
@@ -88,6 +99,9 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             storage_key=version.storage_key,
             resources=resources,
             document_title=document.title,
+            version_label=version.label,
+            contract_type=document.contract_type.value,
+            is_latest_version=is_latest,
         )
         timings: dict[str, float] = {}
         await _set_status(
@@ -165,7 +179,8 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             progress=100,
             finished_at=datetime.now(UTC),
         )
-        document.current_version_id = version.id
+        if is_latest:
+            document.current_version_id = version.id
         await session.commit()
         logger.info("document_processed", extra={"job_id": job_id, "timings_ms": timings})
         return {"status": "COMPLETED", "timings_ms": timings}

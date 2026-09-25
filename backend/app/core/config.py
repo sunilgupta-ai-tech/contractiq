@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://qdrant:6333"
     qdrant_api_key: SecretStr | None = None
     qdrant_collection: str = "contract_chunks"
+    # Must equal the collection's vector size. Changing it (or the embedding
+    # model) requires re-embedding every document — see docs/embeddings.md.
     embedding_dimension: int = 768
 
     # --- Storage ---
@@ -112,8 +114,21 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1:8b"
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.0-flash"
-    embedding_provider: LLMProviderName = LLMProviderName.OLLAMA
-    embedding_model: str = "nomic-embed-text"
+
+    # --- Embeddings (Phase 6) ---
+    # Gemini by default (hosted; needs GEMINI_API_KEY). For fully local
+    # development use EMBEDDING_PROVIDER=ollama, EMBEDDING_MODEL=nomic-embed-text.
+    embedding_provider: LLMProviderName = LLMProviderName.GEMINI
+    embedding_model: str = "gemini-embedding-001"
+    # Texts per API call. Gemini's batchEmbedContents accepts up to 100.
+    embedding_batch_size: int = 100
+    # Retries for rate limits (429), server errors (5xx) and timeouts, with
+    # exponential backoff. Bad keys / bad requests are never retried.
+    embedding_max_retries: int = 5
+    embedding_timeout_s: float = 60.0
+    # Vectors cached in Redis by content hash (per tenant) so unchanged
+    # clauses in a new contract version are not paid for twice. 0 disables.
+    embedding_cache_ttl_s: int = 30 * 24 * 3600
 
     # --- Auth ---
     jwt_secret_key: SecretStr = SecretStr(_INSECURE_JWT_DEFAULT)
@@ -153,6 +168,9 @@ class Settings(BaseSettings):
             raise ValueError("AWS_S3_BUCKET is required when STORAGE_BACKEND=s3")
         if any(origin == "*" for origin in self.cors_origins):
             raise ValueError("Wildcard CORS origins are not allowed outside development")
+        uses_gemini = LLMProviderName.GEMINI in (self.embedding_provider, self.llm_provider)
+        if uses_gemini and not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY is required when a Gemini provider is selected")
         return self
 
     @property

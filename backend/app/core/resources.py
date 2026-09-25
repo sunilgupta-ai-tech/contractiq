@@ -9,7 +9,7 @@ in tests.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from arq.connections import ArqRedis
 from qdrant_client import AsyncQdrantClient
@@ -19,6 +19,8 @@ from app.cache.redis import create_redis
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.db.database import Database
+from app.llm.base import EmbeddingProvider
+from app.llm.factory import create_embeddings
 from app.queue import create_queue
 from app.storage import ObjectStorage, create_storage
 from app.vectorstore.collections import ensure_collection
@@ -35,6 +37,18 @@ class Resources:
     qdrant: AsyncQdrantClient
     storage: ObjectStorage
     queue: ArqRedis
+    # Created on first use (see `embeddings()`), not at startup: a missing
+    # GEMINI_API_KEY must not stop the API from booting in development.
+    _embeddings: EmbeddingProvider | None = field(default=None, repr=False)
+
+    def embeddings(self) -> EmbeddingProvider:
+        """The configured embedding provider (one shared HTTP client per process).
+
+        Raises EmbeddingConfigError if it is misconfigured (e.g. no API key).
+        """
+        if self._embeddings is None:
+            self._embeddings = create_embeddings(self.settings)
+        return self._embeddings
 
     @classmethod
     def create(cls, settings: Settings) -> Resources:
@@ -64,3 +78,5 @@ class Resources:
         await self.queue.aclose()
         await self.queue.connection_pool.disconnect()  # explicit pools aren't auto-closed
         await self.qdrant.close()
+        if self._embeddings is not None:
+            await self._embeddings.aclose()

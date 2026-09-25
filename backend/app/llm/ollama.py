@@ -6,7 +6,8 @@ import time
 
 import httpx
 
-from app.llm.base import ChatMessage, LLMResult
+from app.llm.base import ChatMessage, EmbeddingError, EmbeddingTask, LLMResult
+from app.llm.embedding_utils import check_response, l2_normalize, validate_vectors
 
 
 class OllamaProvider:
@@ -41,14 +42,51 @@ class OllamaProvider:
 
 
 class OllamaEmbeddings:
-    name = "ollama"
+    """Local embeddings via Ollama (e.g. nomic-embed-text, 768 dimensions).
 
-    def __init__(self, base_url: str, model: str, dimension: int) -> None:
+    Ollama has no task-type parameter. Models trained with task prefixes
+    (the nomic-embed family) instead expect the task written into the text
+    itself — "search_document: ..." / "search_query: ..." — so it is added
+    here for those models. Without it, their retrieval quality drops.
+    """
+
+    name = "ollama"
+    _NOMIC_PREFIXES = {
+        EmbeddingTask.DOCUMENT: "search_document: ",
+        EmbeddingTask.QUERY: "search_query: ",
+    }
+
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        dimension: int,
+        timeout_s: float = 60.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self.model = model
         self.dimension = dimension
-        self._client = httpx.AsyncClient(base_url=base_url, timeout=60.0)
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout_s, transport=transport)
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        response = await self._client.post("/api/embed", json={"model": self.model, "input": texts})
-        response.raise_for_status()
-        return response.json()["embeddings"]  # type: ignore[no-any-return]
+    async def embed(
+        self, texts: list[str], *, task: EmbeddingTask = EmbeddingTask.DOCUMENT
+    ) -> list[list[float]]:
+        if not texts:
+            return []
+        if self.model.startswith("nomic-embed"):
+            texts = [self._NOMIC_PREFIXES[task] + t for t in texts]
+        try:
+            response = await self._client.post(
+                "/api/embed", json={"model": self.model, "input": texts}
+            )
+        except httpx.HTTPError as exc:  # Ollama not running, timeout
+            raise EmbeddingError(f"Ollama embeddings request failed: {type(exc).__name__}") from exc
+        check_response(response, "Ollama")
+        vectors = [l2_normalize(v) for v in response.json().get("embeddings", [])]
+        validate_vectors(
+            vectors, expected_count=len(texts), dimension=self.dimension, provider="Ollama"
+        )
+        return vectors
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
