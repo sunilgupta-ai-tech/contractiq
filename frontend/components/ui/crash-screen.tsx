@@ -22,7 +22,7 @@ export function CrashScreen({ error, reset }: { error: Error & { digest?: string
       const stale = isStaleBuildError(error) || (await newBuildDeployed());
       if (cancelled) return;
       if (stale && reloadOnce()) setReloading(true);
-      else console.error("ContractIQ page error", error);
+      else console.error("DocuNexa AI page error", error);
     };
     void recover();
     return () => {
@@ -34,7 +34,7 @@ export function CrashScreen({ error, reset }: { error: Error & { digest?: string
     return (
       <div className="grid min-h-[50vh] place-items-center text-[14px] text-ink-2">
         <span className="flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 animate-spin" /> ContractIQ was updated. Loading the new version…
+          <RefreshCw className="h-4 w-4 animate-spin" /> DocuNexa AI was updated. Loading the new version…
         </span>
       </div>
     );

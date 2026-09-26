@@ -1,5 +1,5 @@
 """
-ContractIQ API entrypoint.
+DocuNexa AI API entrypoint.
 
 `create_app()` is a factory so tests can build isolated app instances with
 overridden settings and dependencies.
@@ -47,7 +47,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title=f"{settings.app_name} API",
         version=settings.app_version,
-        description="Enterprise multimodal contract intelligence & agentic RAG platform.",
+        description=(
+            "DocuNexa AI is an enterprise multimodal document intelligence platform. "
+            "It processes structured and unstructured documents using OCR, vision models, "
+            "RAG and agentic AI, so users can search, understand, compare, summarize and "
+            "extract information from documents with grounded citations."
+        ),
         lifespan=lifespan,
         # Interactive docs are a reconnaissance aid; disable them in production.
         docs_url=None if settings.is_production else "/docs",

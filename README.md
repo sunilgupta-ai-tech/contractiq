@@ -1,7 +1,23 @@
-# ContractIQ
+# DocuNexa AI
 
-**Enterprise multimodal contract intelligence & agentic RAG platform.**
-Upload contracts (digital or scanned), ask questions across them, compare versions, and review risk — with every answer cited to page, section, clause and version.
+**Enterprise Multimodal Document Intelligence Platform** — agentic RAG with cited answers.
+
+## What is DocuNexa AI?
+
+DocuNexa AI is an enterprise multimodal document intelligence platform. It can process structured and unstructured documents such as PDFs, scanned PDFs, images, Word files and Excel files using OCR, vision models, RAG and Agentic AI. The system allows users to search, understand, compare, summarize and extract information from documents with grounded citations.
+
+| Capability | Status |
+|---|---|
+| Digital PDFs (text, tables, embedded images) | ✅ Available |
+| Scanned PDFs (OCR) | ✅ Available |
+| Search & Q&A with page/section/clause citations | ✅ Available |
+| Compare versions, summaries, risk review | ✅ Available |
+| Word (.docx) and Excel (.xlsx) | 🗓️ Planned |
+| Images (.jpg, .png) and handwritten / register scans | 🗓️ Planned |
+
+Upload documents (digital or scanned), ask questions across them, compare versions, and review risk — with every answer cited to page, section, clause and version.
+
+> Formerly *ContractIQ*. Internal identifiers (repo, Docker services, database, `contractiq_*` metrics) keep the old name so existing data, dashboards and alerts keep working.
 
 > Status: **Phase 13 — Observability complete** (Prometheus metrics for HTTP, RAG stages, model calls, tokens, cost, answer outcomes and the worker pipeline; one trace per question to Langfuse or logs; per-call model logs; example alert rules; see [`docs/observability.md`](docs/observability.md)). **Phase 12 — Evaluation complete** (golden dataset over a generated sample MSA, end-to-end harness with retrieval, answer, citation and groundedness metrics, optional LLM judge, grounding-threshold calibration, JSON/Markdown reports and a baseline regression gate in CI; see [`docs/evaluation.md`](docs/evaluation.md)). **Phase 11 — Guardrails complete** (rate limits and failed-login throttling in Redis, hidden-character stripping, output sanitising, per-answer groundedness check with `flag`/`enforce` policy, agent tool-argument limits; see [`docs/guardrails.md`](docs/guardrails.md)). **Phase 10 — Contract analysis complete** (clause extraction with verified quotes and typed facts, cited executive summaries with key dates, rule-based risk findings, clause-aligned version/contract comparison, portfolio summary; cached per version, background analysis for large requests; see [`docs/contract-analysis.md`](docs/contract-analysis.md)). **Phase 9 — Multimodal complete** (images captioned by a vision model and tables summarised, so figures, signatures and tables are searchable; captions are their own chunks cited to the image's page region; Gemini by default, Ollama optional; see [`docs/multimodal.md`](docs/multimodal.md)). **Phase 8 — LangGraph agent complete** (`/query` default: follow-up rewriting, multi-part decomposition, evidence validation and bounded retries; `mode: "fast"` for single-pass; see [`docs/agentic-rag.md`](docs/agentic-rag.md)). **Phase 7 — Contract Q&A (RAG) complete** (`POST /query`: hybrid search, reranking, small-to-big context, verified citations; see [`docs/rag.md`](docs/rag.md)). **Phase 6 — Embeddings & Qdrant indexing complete** (Gemini by default, Ollama optional; dense + keyword vectors, tenant-isolated, version-aware; see [`docs/embeddings.md`](docs/embeddings.md)). **Phase 5 — Contract-aware chunking complete** (section/clause-aware parent + child chunks with metadata; see [`docs/chunking.md`](docs/chunking.md)). **Phase 4 — PDF processing & OCR complete** (text layer, tables, images, scanned-page OCR and layout labelling; see [`docs/pdf-processing.md`](docs/pdf-processing.md)). Phase 3 — Document upload complete. Phase 1 delivered the monorepo, FastAPI, PostgreSQL, Redis, Qdrant, worker, Docker, configuration, health checks, logging, full database schema, and the complete designed frontend. Phase 2 added registration, login, single-use refresh tokens, RBAC-protected user management and tenant-scoped audit logging. Phase 3 adds validated PDF upload, versioning, dedupe, storage, queued processing jobs, status polling and delete (see [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md)). All planned API endpoints are implemented as of Phase 10 (see [`docs/api.md`](docs/api.md)).
 
@@ -113,4 +129,4 @@ The frontend runs on demo data (`NEXT_PUBLIC_USE_DEMO_DATA=true`) until each bac
 
 ---
 
-*ContractIQ is an AI-assisted analysis tool and not a substitute for professional legal advice.*
+*DocuNexa AI is an AI-assisted analysis tool and not a substitute for professional legal advice.*

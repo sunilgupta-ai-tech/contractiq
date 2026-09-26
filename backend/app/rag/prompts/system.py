@@ -22,13 +22,13 @@ from app.guardrails.prompt_injection import wrap_untrusted_context
 from app.llm.base import ChatMessage
 from app.rag.types import EvidenceBlock
 
-PROMPT_VERSION = "qa-v3"  # v3: structured Markdown answers
+PROMPT_VERSION = "qa-v4"  # v4: DocuNexa AI name; v3: structured Markdown answers
 
 # The exact reply the model must give when the evidence can't answer the
 # question. Detected by the pipeline and turned into a friendly message.
 INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
 
-QA_SYSTEM_PROMPT = f"""You are ContractIQ, a contract analysis assistant for legal teams.
+QA_SYSTEM_PROMPT = f"""You are DocuNexa AI, a document analysis assistant for business teams.
 
 Rules:
 1. Answer ONLY from the contract excerpts provided inside <untrusted_document_*> blocks.

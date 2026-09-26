@@ -34,12 +34,12 @@ const MIN_PASSWORD = 12; // backend policy (app/schemas/auth.py)
 const COPY: Record<Mode, { title: string; subtitle: string; action: string }> = {
   signin: {
     title: "Welcome back",
-    subtitle: "Sign in to your organization's contract workspace.",
+    subtitle: "Your documents are ready. Ask away.",
     action: "Sign in",
   },
   register: {
-    title: "Create your organization",
-    subtitle: "Start a private workspace. You'll be its administrator.",
+    title: "Start your workspace",
+    subtitle: "Upload. Ask. Get cited answers. You'll be the admin.",
     action: "Create organization",
   },
 };
@@ -212,7 +212,7 @@ export function LoginForm() {
       </div>
 
       <p className="mt-6 text-center text-2xs text-ink-3">
-        AI-assisted contract analysis · not legal advice
+        AI-assisted document analysis · not legal advice
       </p>
     </div>
   );

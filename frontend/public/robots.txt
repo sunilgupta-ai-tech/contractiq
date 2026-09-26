@@ -1,2 +1,4 @@
 User-agent: *
+# Only the public sign-in page may be indexed; every workspace page is private.
+Allow: /login$
 Disallow: /

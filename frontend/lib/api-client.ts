@@ -1,7 +1,7 @@
 import { config } from "@/lib/config";
 
 /**
- * Typed fetch wrapper for the ContractIQ API.
+ * Typed fetch wrapper for the DocuNexa AI API.
  *
  * The backend always responds with an envelope:
  *   { success: true,  data, request_id }
@@ -191,7 +191,7 @@ async function send<T>(path: string, options: RequestOptions, mayRenew: boolean)
     if (error instanceof ApiError) throw error;
     const aborted = error instanceof DOMException && error.name === "AbortError";
     throw new ApiError(
-      aborted ? "The server took too long to respond." : "Cannot reach the ContractIQ API.",
+      aborted ? "The server took too long to respond." : "Cannot reach the DocuNexa AI server.",
       aborted ? "TIMEOUT" : "NETWORK_ERROR",
       0,
       null,

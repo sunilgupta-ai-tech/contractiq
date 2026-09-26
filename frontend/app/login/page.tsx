@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { LoginForm } from "@/features/auth/login-form";
 import { FileSearch, GitCompareArrows, Lock, ShieldCheck } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
+import { PRODUCT } from "@/lib/product";
 
 const FEATURES = [
   { icon: FileSearch, label: "Understands clauses" },
@@ -10,7 +11,11 @@ const FEATURES = [
   { icon: Lock, label: "Private to your team" },
 ];
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = {
+  title: "Sign in",
+  description: PRODUCT.seoDescription,
+  robots: { index: true, follow: false },
+};
 
 export default function LoginPage() {
   return (
@@ -22,11 +27,10 @@ export default function LoginPage() {
 
         <div className="relative my-auto max-w-xl py-8">
           <p className="text-balance font-serif text-[36px] leading-[1.12] xl:text-[40px]">
-            Read every contract. <span className="text-brand">Cite every answer.</span>
+            Read every document. <span className="text-brand">Cite every answer.</span>
           </p>
-          <p className="mt-4 max-w-lg text-[15px] leading-7 text-rail-mute">
-            Upload digital or scanned agreements and ask questions in plain language. Every answer points to the exact page, clause and version it came from.
-          </p>
+          <p className="mt-4 text-2xs font-semibold uppercase tracking-[0.14em] text-brand">{PRODUCT.eyebrow}</p>
+          <p className="mt-2 max-w-md text-[15px] leading-7 text-rail-mute">{PRODUCT.pitch}</p>
 
           {/* Illustrative example of an answer; not live data. */}
           <figure className="mt-7 max-w-lg rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-lift backdrop-blur" aria-label="Example answer">
@@ -56,9 +60,23 @@ export default function LoginPage() {
               </li>
             ))}
           </ul>
+
+          <div className="mt-6 flex max-w-lg flex-wrap items-center gap-1.5 text-2xs">
+            <span className="mr-1 text-rail-mute/80">Formats</span>
+            {PRODUCT.formats.available.map((f) => (
+              <span key={f} className="rounded-md bg-brand/15 px-2 py-0.5 font-medium text-brand">
+                {f}
+              </span>
+            ))}
+            {PRODUCT.formats.planned.map((f) => (
+              <span key={f} className="rounded-md border border-white/10 px-2 py-0.5 text-rail-mute/80" title="Coming soon">
+                {f} · soon
+              </span>
+            ))}
+          </div>
         </div>
 
-        <p className="relative text-2xs text-rail-mute/70">© {new Date().getFullYear()} ContractIQ</p>
+        <p className="relative text-2xs text-rail-mute/70">© {new Date().getFullYear()} {PRODUCT.name}</p>
       </section>
       <section className="relative flex items-center justify-center overflow-hidden px-5 py-12 sm:px-8">
         {/* Soft brand glow behind the card; purely decorative. */}

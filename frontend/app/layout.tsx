@@ -4,10 +4,24 @@ import "@fontsource-variable/fraunces/full.css";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
+import { PRODUCT } from "@/lib/product";
 
 export const metadata: Metadata = {
-  title: { default: "ContractIQ", template: "%s · ContractIQ" },
-  description: "Enterprise multimodal contract intelligence and agentic RAG.",
+  title: { default: `${PRODUCT.name} — ${PRODUCT.tagline}`, template: `%s · ${PRODUCT.name}` },
+  description: PRODUCT.seoDescription,
+  applicationName: PRODUCT.name,
+  keywords: [...PRODUCT.keywords],
+  openGraph: {
+    type: "website",
+    siteName: PRODUCT.name,
+    title: `${PRODUCT.name} — ${PRODUCT.tagline}`,
+    description: PRODUCT.seoDescription,
+  },
+  twitter: {
+    card: "summary",
+    title: `${PRODUCT.name} — ${PRODUCT.tagline}`,
+    description: PRODUCT.seoDescription,
+  },
 };
 
 export const viewport: Viewport = {

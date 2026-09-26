@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # --- Application ---
     app_env: Environment = Environment.DEVELOPMENT
-    app_name: str = "ContractIQ"
+    app_name: str = "DocuNexa AI"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
     log_json: bool = False

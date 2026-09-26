@@ -1,4 +1,4 @@
-# ContractIQ — Frontend
+# DocuNexa AI — Frontend
 
 Next.js 15 (App Router) · React 19 · TypeScript (strict) · Tailwind CSS.
 
