@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { hasSession } from "@/lib/api-client";
+import { config } from "@/lib/config";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
+  const router = useRouter();
+
+  // With the real API, the workspace needs a signed-in user.
+  useEffect(() => {
+    if (!config.useDemoData && !hasSession()) router.replace("/login");
+  }, [router]);
 
   return (
     <div className="min-h-screen">

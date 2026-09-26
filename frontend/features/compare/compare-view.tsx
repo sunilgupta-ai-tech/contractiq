@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRightLeft, Equal, Minus, PenLine } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -8,8 +8,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { RiskBadge } from "@/components/ui/risk-badge";
 import { ErrorState, Skeleton } from "@/components/ui/states";
 import { useAsync } from "@/hooks/use-async";
-import { demoDocuments } from "@/lib/demo/fixtures";
 import { analysisService } from "@/services/analysis-service";
+import { documentService } from "@/services/document-service";
 import type { ComparisonRow, DiffKind } from "@/types";
 import { cn } from "@/utils/cn";
 import { wordDiff, type DiffSegment } from "@/utils/diff";
@@ -53,16 +53,31 @@ function Side({ side, label, segments }: { side: ComparisonRow["left"]; label: s
 }
 
 export function CompareView() {
-  const versioned = demoDocuments.filter((d) => d.versions.length > 1);
-  const [docId, setDocId] = useState(versioned[0]!.id);
-  const doc = versioned.find((d) => d.id === docId)!;
-  const [left, setLeft] = useState(doc.versions[0]!.id);
-  const [right, setRight] = useState(doc.versions.at(-1)!.id);
+  const { data: docs, error: docsError, loading: docsLoading } = useAsync(() => documentService.comparable(), []);
+  const versioned = docs ?? [];
+  const [docId, setDocId] = useState("");
+  const doc = versioned.find((d) => d.id === docId) ?? versioned[0];
+  const [left, setLeft] = useState("");
+  const [right, setRight] = useState("");
   const [onlyChanges, setOnlyChanges] = useState(false);
-  const { data, error, loading, reload } = useAsync(() => analysisService.compare(left, right), [left, right]);
 
-  const leftLabel = doc.versions.find((v) => v.id === left)?.label ?? "A";
-  const rightLabel = doc.versions.find((v) => v.id === right)?.label ?? "B";
+  // Default to the document's first and latest versions once documents load.
+  useEffect(() => {
+    if (doc && !doc.versions.some((v) => v.id === left)) {
+      setDocId(doc.id);
+      setLeft(doc.versions[0]!.id);
+      setRight(doc.versions.at(-1)!.id);
+    }
+  }, [doc, left]);
+
+  const ready = Boolean(left && right && left !== right);
+  const { data, error, loading, reload } = useAsync(
+    () => (ready ? analysisService.compare(left, right) : Promise.resolve([] as ComparisonRow[])),
+    [left, right, ready],
+  );
+
+  const leftLabel = doc?.versions.find((v) => v.id === left)?.label ?? "A";
+  const rightLabel = doc?.versions.find((v) => v.id === right)?.label ?? "B";
   const rows = (data ?? []).filter((r) => !onlyChanges || r.diff !== "same");
   const changed = (data ?? []).filter((r) => r.diff !== "same").length;
 
@@ -75,6 +90,15 @@ export function CompareView() {
         title="Compare versions"
         description="Clauses are aligned by topic, not by page, so renumbered or moved provisions still line up. Every difference links back to its source."
       />
+      {docsError && <ErrorState error={docsError} />}
+      {!docsLoading && !docsError && !doc && (
+        <Card className="p-6 text-[14px] text-ink-2">
+          Nothing to compare yet: comparison needs a contract with at least two processed versions.
+          The web app doesn&apos;t upload new versions yet; use the API (<code>POST /api/v1/documents/upload</code> with{" "}
+          <code>document_id</code>) and the contract will appear here.
+        </Card>
+      )}
+      {doc && (
       <Card className="mb-5 flex flex-wrap items-center gap-3 p-4">
         <select value={docId} onChange={(e) => { const d = versioned.find((x) => x.id === e.target.value)!; setDocId(d.id); setLeft(d.versions[0]!.id); setRight(d.versions.at(-1)!.id); }} className={cn(select, "min-w-[240px] flex-1")}>
           {versioned.map((d) => <option key={d.id} value={d.id}>{d.title} — {d.counterparty}</option>)}
@@ -91,9 +115,10 @@ export function CompareView() {
           Only differences
         </label>
       </Card>
+      )}
 
       {error && <ErrorState error={error} onRetry={reload} />}
-      {loading ? (
+      {!doc ? null : loading ? (
         <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}</div>
       ) : (
         <>

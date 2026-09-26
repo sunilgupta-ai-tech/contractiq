@@ -37,10 +37,41 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
   acceptErrorData?: boolean;
 }
 
+// The access token lives in sessionStorage: it survives a page reload but
+// not closing the tab, and is never sent to other origins. (A BFF with
+// httpOnly cookies remains the planned hardening; see docs/security.md.)
+const TOKEN_KEY = "ciq.access_token";
 let accessToken: string | null = null;
+
+function storage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null; // storage disabled (privacy mode)
+  }
+}
+
 export const setAccessToken = (token: string | null) => {
   accessToken = token;
+  const store = storage();
+  if (!store) return;
+  if (token) store.setItem(TOKEN_KEY, token);
+  else store.removeItem(TOKEN_KEY);
 };
+
+export const getAccessToken = (): string | null => {
+  if (accessToken === null) accessToken = storage()?.getItem(TOKEN_KEY) ?? null;
+  return accessToken;
+};
+
+export const hasSession = (): boolean => getAccessToken() !== null;
+
+/** An expired or missing session sends the user to sign in again. */
+function onUnauthorized(path: string): void {
+  if (path.startsWith("/auth/") || typeof window === "undefined") return;
+  setAccessToken(null);
+  if (window.location.pathname !== "/login") window.location.assign("/login");
+}
 
 export function parseEnvelope<T>(status: number, payload: unknown, acceptErrorData = false): T {
   const env = payload as Envelope<T> | null;
@@ -67,12 +98,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       headers: {
         Accept: "application/json",
         ...(body && !isForm ? { "Content-Type": "application/json" } : {}),
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(getAccessToken() ? { Authorization: `Bearer ${getAccessToken()}` } : {}),
         ...headers,
       },
       body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
     });
     const payload = await response.json().catch(() => null);
+    if (response.status === 401 && !config.useDemoData) onUnauthorized(path);
     return parseEnvelope<T>(response.status, payload, acceptErrorData);
   } catch (error) {
     if (error instanceof ApiError) throw error;
