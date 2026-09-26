@@ -101,7 +101,9 @@ def _citation(index: int, block: EvidenceBlock) -> Citation:
 
 
 def _cited_fraction(text: str) -> float:
-    sentences = [s for s in _SENTENCE.split(text) if len(s.strip()) > 3]
+    # Markdown headings are structure, not statements that need a citation.
+    prose = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    sentences = [s for s in _SENTENCE.split(prose) if len(s.strip()) > 3]
     if not sentences:
         return 0.0
     cited = sum(1 for s in sentences if re.search(r"\[\d+\]", s))

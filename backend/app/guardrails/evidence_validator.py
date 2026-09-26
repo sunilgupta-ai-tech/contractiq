@@ -44,8 +44,12 @@ if TYPE_CHECKING:
 MIN_OVERLAP = 0.3
 MIN_CLAIM_WORDS = 4
 
-_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+# A sentence ends at . ! ? followed by a capital letter, quote or bracket, so
+# abbreviations and amounts ("approx. ₹80,000", "e.g. the fee") don't split it.
+_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'“(\[])")
 _MARKER = re.compile(r"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]")
+_LIST_MARKER = re.compile(r"^(?:[-*+]|\d{1,3}[.)])\s+")
+_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _TRAILING_MARKERS = re.compile(r"([.!?])\s*((?:\[\d{1,3}(?:\s*,\s*\d{1,3})*\]\s*)+)")
 _NUMBER = re.compile(r"\d[\d,.]*\d|\d")
 _WORD = re.compile(r"[a-z][a-z'-]{3,}")
@@ -109,7 +113,7 @@ def check_grounding(answer: str, blocks: list[EvidenceBlock]) -> GroundingReport
     answer = _TRAILING_MARKERS.sub(
         lambda m: f" {''.join(m.group(2).split())}{m.group(1)} ", answer.strip()
     ).strip()
-    for sentence in _SENTENCE.split(answer):
+    for sentence in _claim_sentences(answer):
         text = _MARKER.sub("", sentence).strip()
         words = _content_words(text)
         numbers = _numbers(text)
@@ -125,6 +129,22 @@ def check_grounding(answer: str, blocks: list[EvidenceBlock]) -> GroundingReport
     supported = sum(c.supported for c in claims)
     score = round(supported / len(claims), 2) if claims else 1.0
     return GroundingReport(score=score, claims=claims)
+
+
+def _claim_sentences(answer: str) -> list[str]:
+    """Sentences of a (possibly Markdown-formatted) answer. Each line is its
+    own unit: bullet and number markers and **bold** are stripped, and lines
+    that are structure rather than claims — "### Headings" and uncited
+    "Label:" lines introducing a list — are skipped."""
+    sentences: list[str] = []
+    for raw in answer.splitlines():
+        line = _BOLD.sub(r"\1", _LIST_MARKER.sub("", raw.strip()))
+        if not line or line.startswith("#"):
+            continue
+        if line.endswith(":") and not _MARKER.search(line):
+            continue
+        sentences.extend(s for s in _SENTENCE.split(line) if s.strip())
+    return sentences
 
 
 def _check(

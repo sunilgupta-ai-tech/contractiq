@@ -418,3 +418,27 @@ def test_markers_after_the_full_stop_stay_with_their_sentence():
         BLOCKS,
     )
     assert report.score == 1.0 and [c.cited for c in report.claims] == [[1], [2]]
+
+
+def test_markdown_answers_are_checked_line_by_line():
+    # Structured answers (qa-v3 prompt): headings and "Label:" lines are
+    # structure, bullets are claims, **bold** and list markers are ignored.
+    answer = (
+        "Either party may terminate on 60 days' written notice [1].\n\n"
+        "### Liability\n"
+        "Key points:\n"
+        "- Liability is capped at the **fees paid** in the preceding **12 months** [2]\n"
+        "1. Either party may terminate on 90 days' notice [1]"
+    )
+    report = check_grounding(answer, BLOCKS)
+    assert [c.sentence for c in report.claims] == [
+        "Either party may terminate on 60 days' written notice .",
+        "Liability is capped at the fees paid in the preceding 12 months",
+        "Either party may terminate on 90 days' notice",
+    ]  # stored without the [n] markers
+    assert [c.supported for c in report.claims] == [True, True, False]  # 90 isn't in [1]
+
+
+def test_abbreviations_do_not_split_a_claim():
+    report = check_grounding("The cap is about 12 months of fees (approx. one year) [2].", BLOCKS)
+    assert len(report.claims) == 1 and report.claims[0].supported

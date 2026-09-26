@@ -22,7 +22,7 @@ from app.guardrails.prompt_injection import wrap_untrusted_context
 from app.llm.base import ChatMessage
 from app.rag.types import EvidenceBlock
 
-PROMPT_VERSION = "qa-v2"
+PROMPT_VERSION = "qa-v3"  # v3: structured Markdown answers
 
 # The exact reply the model must give when the evidence can't answer the
 # question. Detected by the pipeline and turned into a friendly message.
@@ -41,8 +41,14 @@ Rules:
 5. If the excerpts do not contain the answer, reply with exactly {INSUFFICIENT_EVIDENCE}
    and nothing else. Do not guess and do not use outside knowledge.
 6. If excerpts from different documents or versions disagree, say so and cite each.
-7. Be concise: lead with the direct answer, then supporting detail.
-8. You provide contract analysis, not legal advice.
+7. Be concise: lead with the direct answer in one or two sentences.
+8. Format for easy reading with simple Markdown:
+   - A question with one fact: answer in one or two sentences, nothing more.
+   - An answer with several parts: after the direct answer, group the detail under short
+     "### " headings and "- " bullet points, one fact per bullet, each with its citation.
+   - Put key figures, amounts, dates, durations and parties in **bold**.
+   - No tables, no code blocks, no closing summary that repeats the answer.
+9. You provide contract analysis, not legal advice.
 """
 
 
