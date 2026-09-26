@@ -23,9 +23,16 @@ from app.core.dependencies import (
     SettingsDep,
     UploadRateLimitDep,
 )
-from app.db.models import ContractType, DocumentStatus
+from app.db.models import ContractType, DocumentStatus, FileType
+from app.db.repositories.document_repository import DocumentSort
 from app.schemas.common import ApiResponse, Page
-from app.schemas.document import DocumentDetail, DocumentOut, DocumentStatusOut, UploadResult
+from app.schemas.document import (
+    DocumentDetail,
+    DocumentFacets,
+    DocumentOut,
+    DocumentStatusOut,
+    UploadResult,
+)
 from app.services.document_service import (
     UploadMetadata,
     clean_filename,
@@ -88,9 +95,16 @@ async def list_documents(
     service: DocumentServiceDep,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    status_filter: Annotated[DocumentStatus | None, Query(alias="status")] = None,
+    status_filter: Annotated[
+        list[DocumentStatus] | None,
+        Query(alias="status", description="Repeat to match any of several statuses"),
+    ] = None,
     contract_type: Annotated[ContractType | None, Query()] = None,
-    q: Annotated[str | None, Query(max_length=200, description="Search title/counterparty")] = None,
+    file_type: Annotated[FileType | None, Query(description="PDF, IMAGE, WORD or EXCEL")] = None,
+    q: Annotated[
+        str | None, Query(max_length=200, description="Search title, counterparty, file name")
+    ] = None,
+    sort: Annotated[DocumentSort, Query()] = DocumentSort.NEWEST,
 ) -> ApiResponse[Page[DocumentOut]]:
     return ApiResponse(
         data=await service.list(
@@ -98,9 +112,29 @@ async def list_documents(
             limit=limit,
             status=status_filter,
             contract_type=contract_type,
+            file_type=file_type,
             search=q,
+            sort=sort,
         )
     )
+
+
+# Declared before /documents/{document_id} so "facets" is not read as an id.
+@router.get(
+    "/documents/facets",
+    summary="Document counts per file type (library tabs)",
+    response_model=ApiResponse[DocumentFacets],
+)
+async def document_facets(
+    _: DocumentReaderDep,
+    service: DocumentServiceDep,
+    status_filter: Annotated[
+        list[DocumentStatus] | None,
+        Query(alias="status", description="Repeat to match any of several statuses"),
+    ] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+) -> ApiResponse[DocumentFacets]:
+    return ApiResponse(data=await service.facets(status=status_filter, search=q))
 
 
 @router.get(

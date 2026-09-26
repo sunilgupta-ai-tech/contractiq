@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger, tenant_id_ctx
 from app.db.models import Document, DocumentStatus, DocumentVersion, JobStatus, ProcessingJob
+from app.db.tenancy import bind_tenant
 from app.document_processing.parser import PdfProcessingError
 from app.observability import metrics
 
@@ -77,6 +78,8 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         if job is None or job.document_version_id is None:
             logger.warning("job_not_found", extra={"job_id": job_id})
             return {"status": "missing"}
+        # From here on, row-level security limits the session to the job's tenant.
+        await bind_tenant(session, job.organization_id)
         version = await session.get(DocumentVersion, job.document_version_id)
         assert version is not None
         document = await session.get(Document, version.document_id)

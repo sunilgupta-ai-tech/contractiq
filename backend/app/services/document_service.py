@@ -24,6 +24,7 @@ import hashlib
 import re
 import unicodedata
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
@@ -44,12 +45,14 @@ from app.db.models import (
     Document,
     DocumentStatus,
     DocumentVersion,
+    FileType,
     JobStatus,
     JobType,
     ProcessingJob,
 )
 from app.db.repositories.document_repository import (
     DocumentRepository,
+    DocumentSort,
     DocumentVersionRepository,
     JobRepository,
 )
@@ -57,6 +60,7 @@ from app.queue import enqueue_document_processing
 from app.schemas.common import Page
 from app.schemas.document import (
     DocumentDetail,
+    DocumentFacets,
     DocumentOut,
     DocumentStatusOut,
     DocumentVersionOut,
@@ -150,6 +154,7 @@ def to_document_out(document: Document) -> DocumentOut:
         id=document.id,
         title=document.title,
         contract_type=document.contract_type,
+        file_type=document.file_type,
         counterparty=document.counterparty,
         status=document.status,
         effective_date=document.effective_date,
@@ -312,16 +317,33 @@ class DocumentService:
         *,
         offset: int,
         limit: int,
-        status: DocumentStatus | None = None,
+        status: DocumentStatus | Collection[DocumentStatus] | None = None,
         contract_type: ContractType | None = None,
+        file_type: FileType | None = None,
         search: str | None = None,
+        sort: DocumentSort = DocumentSort.NEWEST,
     ) -> Page[DocumentOut]:
         rows, total = await self.documents.search(
-            offset=offset, limit=limit, status=status, contract_type=contract_type, search=search
+            offset=offset,
+            limit=limit,
+            status=status,
+            contract_type=contract_type,
+            file_type=file_type,
+            search=search,
+            sort=sort,
         )
         return Page(
             items=[to_document_out(d) for d in rows], total=total, offset=offset, limit=limit
         )
+
+    async def facets(
+        self,
+        *,
+        status: DocumentStatus | Collection[DocumentStatus] | None = None,
+        search: str | None = None,
+    ) -> DocumentFacets:
+        counts = await self.documents.file_type_counts(status=status, search=search)
+        return DocumentFacets(all=sum(counts.values()), by_file_type=counts)
 
     async def get(self, document_id: uuid.UUID) -> DocumentDetail:
         return to_document_detail(await self.documents.get_with_versions(document_id))

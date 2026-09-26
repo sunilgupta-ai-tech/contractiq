@@ -18,6 +18,7 @@ from app.db.repositories.document_repository import (
     DocumentRepository,
     DocumentVersionRepository,
 )
+from app.db.tenancy import bind_tenant
 from app.services.contract_service import ContractAnalyzer, VersionRef
 
 logger = get_logger("contractiq.worker.analysis")
@@ -33,6 +34,7 @@ async def analyze_version(
     tenant = uuid.UUID(tenant_id)
     try:
         async with resources.db.session_factory() as session:
+            await bind_tenant(session, tenant)
             document = await DocumentRepository(session, tenant).get(uuid.UUID(document_id))
             version = await DocumentVersionRepository(session, tenant).get(uuid.UUID(version_id))
     except NotFoundError:  # deleted since the job was queued: nothing to do, don't retry

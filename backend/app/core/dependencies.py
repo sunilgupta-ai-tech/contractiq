@@ -21,6 +21,7 @@ from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.logging import tenant_id_ctx
 from app.core.resources import Resources
 from app.core.security import Permission, Role, decode_token, has_permission
+from app.db.tenancy import bind_tenant
 from app.guardrails.input_guardrails import (
     RateLimiter,
     limits_for,
@@ -81,6 +82,18 @@ async def get_current_user(
     )
     tenant_id_ctx.set(str(user.tenant_id))
     return user
+
+
+async def get_tenant_session(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> AsyncSession:
+    """The request's session, bound to the caller's tenant (Phase 15): from
+    here on PostgreSQL row-level security only lets it reach that tenant's
+    rows, whatever the query. FastAPI caches `get_db_session` per request, so
+    every dependency of the request shares this one bound session."""
+    await bind_tenant(session, user.tenant_id)
+    return session
 
 
 def require_permission(permission: Permission) -> Callable[..., CurrentUser]:
@@ -173,7 +186,7 @@ def get_auth_service(
 
 def get_user_service(
     user: Annotated[CurrentUser, Depends(get_current_user)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: Annotated[AsyncSession, Depends(get_tenant_session)],
 ) -> UserService:
     """Scoped to the caller's tenant from the signed token."""
     return UserService(session, user.tenant_id)
@@ -181,7 +194,7 @@ def get_user_service(
 
 def get_document_service(
     user: Annotated[CurrentUser, Depends(get_current_user)],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: Annotated[AsyncSession, Depends(get_tenant_session)],
     resources: Annotated[Resources, Depends(get_resources)],
 ) -> DocumentService:
     """Scoped to the caller's tenant from the signed token."""
@@ -190,7 +203,7 @@ def get_document_service(
 
 def get_query_service(
     user: Annotated[CurrentUser, Depends(require_permission(Permission.QUERY_RUN))],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: Annotated[AsyncSession, Depends(get_tenant_session)],
     resources: Annotated[Resources, Depends(get_resources)],
 ) -> QueryService:
     """Scoped to the caller's tenant and user (from the signed token)."""
@@ -205,7 +218,7 @@ def get_query_service(
 
 def get_contract_service(
     user: Annotated[CurrentUser, Depends(require_permission(Permission.ANALYSIS_RUN))],
-    session: Annotated[AsyncSession, Depends(get_db_session)],
+    session: Annotated[AsyncSession, Depends(get_tenant_session)],
     resources: Annotated[Resources, Depends(get_resources)],
 ) -> ContractService:
     """Contract analysis (Phase 10), scoped to the caller's tenant."""
@@ -226,6 +239,7 @@ def get_comparison_service(
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
 RequestMetaDep = Annotated[RequestMeta, Depends(get_request_meta)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]

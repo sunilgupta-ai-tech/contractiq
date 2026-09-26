@@ -39,6 +39,16 @@ class DocumentStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class FileType(StrEnum):
+    """Document family shown in the Documents library tabs (Phase 15). A
+    scanned PDF is still PDF; `DocumentVersion.is_scanned` tells them apart."""
+
+    PDF = "PDF"
+    IMAGE = "IMAGE"
+    WORD = "WORD"
+    EXCEL = "EXCEL"
+
+
 class ContractType(StrEnum):
     MSA = "MSA"
     NDA = "NDA"
@@ -60,6 +70,12 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
         Enum(ContractType, name="contract_type"), default=ContractType.OTHER, nullable=False
     )
     counterparty: Mapped[str | None] = mapped_column(String(300))
+    file_type: Mapped[FileType] = mapped_column(
+        Enum(FileType, name="file_type"),
+        default=FileType.PDF,
+        server_default=FileType.PDF.value,
+        nullable=False,
+    )
     effective_date: Mapped[date | None] = mapped_column(Date)
     expiry_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[DocumentStatus] = mapped_column(

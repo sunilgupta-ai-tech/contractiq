@@ -9,7 +9,7 @@ export interface NavItem {
 
 export const primaryNav: NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutGrid },
-  { href: "/documents", label: "Contracts", icon: FileText },
+  { href: "/documents", label: "Documents", icon: FileText },
   { href: "/assistant", label: "Assistant", icon: MessageSquareText },
   { href: "/compare", label: "Compare", icon: GitCompareArrows },
   { href: "/risk", label: "Risk review", icon: ShieldAlert, badge: "7" },

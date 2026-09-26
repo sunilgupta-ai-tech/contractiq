@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.db.models import ContractType, DocumentStatus, JobStatus, JobType
+from app.db.models import ContractType, DocumentStatus, FileType, JobStatus, JobType
 
 
 class DocumentVersionOut(BaseModel):
@@ -33,6 +33,7 @@ class DocumentOut(BaseModel):
     id: uuid.UUID
     title: str
     contract_type: ContractType
+    file_type: FileType
     counterparty: str | None
     status: DocumentStatus
     effective_date: date | None
@@ -47,6 +48,14 @@ class DocumentOut(BaseModel):
 
 class DocumentDetail(DocumentOut):
     versions: list[DocumentVersionOut]
+
+
+class DocumentFacets(BaseModel):
+    """Counts for the library tabs: `all` plus one per file type, under the
+    same status/search filters as the list."""
+
+    all: int
+    by_file_type: dict[FileType, int]
 
 
 class JobOut(BaseModel):

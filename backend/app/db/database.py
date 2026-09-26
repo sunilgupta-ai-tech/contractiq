@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import Settings
+from app.db.tenancy import TenantAwareSession
 
 # Deterministic constraint names keep Alembic autogenerate diffs stable.
 NAMING_CONVENTION = {
@@ -47,8 +48,13 @@ class Database:
             pool_recycle=1800,
             echo=settings.db_echo,
         )
+        # TenantAwareSession applies row-level security to sessions bound to a
+        # tenant (app/db/tenancy.py).
         self.session_factory = async_sessionmaker(
-            self.engine, expire_on_commit=False, autoflush=False
+            self.engine,
+            expire_on_commit=False,
+            autoflush=False,
+            sync_session_class=TenantAwareSession,
         )
 
     async def session(self) -> AsyncIterator[AsyncSession]:

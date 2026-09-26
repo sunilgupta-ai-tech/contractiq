@@ -2,7 +2,13 @@
 
 from app.db.models.audit import AuditLog
 from app.db.models.conversation import Conversation, Message, MessageRole
-from app.db.models.document import ContractType, Document, DocumentStatus, DocumentVersion
+from app.db.models.document import (
+    ContractType,
+    Document,
+    DocumentStatus,
+    DocumentVersion,
+    FileType,
+)
 from app.db.models.evaluation import EvaluationRun
 from app.db.models.job import JobStatus, JobType, ProcessingJob
 from app.db.models.organization import Organization
@@ -16,6 +22,7 @@ __all__ = [
     "DocumentStatus",
     "DocumentVersion",
     "EvaluationRun",
+    "FileType",
     "JobStatus",
     "JobType",
     "Message",

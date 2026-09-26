@@ -16,7 +16,10 @@ import type {
 
 const iso = (d: string) => new Date(d).toISOString();
 
-export const demoDocuments: ContractDocument[] = [
+// Every demo contract is a PDF; the file name follows the title.
+type DemoDocument = Omit<ContractDocument, "fileType" | "fileName">;
+
+const demoContracts: DemoDocument[] = [
   {
     id: "d-100", title: "Master Services Agreement", counterparty: "Northwind Logistics Ltd.", contractType: "MSA",
     status: "COMPLETED", progress: 100, pages: 42, sizeBytes: 3_420_112, version: "v2",
@@ -82,6 +85,12 @@ export const demoDocuments: ContractDocument[] = [
     updatedAt: iso("2026-09-25T07:03:00"), isScanned: false, tags: ["vendor"],
   },
 ];
+
+export const demoDocuments: ContractDocument[] = demoContracts.map((d) => ({
+  ...d,
+  fileType: "PDF",
+  fileName: `${d.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}.pdf`,
+}));
 
 export const demoDetail: ContractDetail = {
   ...(demoDocuments[0] as ContractDocument),

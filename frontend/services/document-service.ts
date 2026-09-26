@@ -13,7 +13,8 @@ import {
 import { queued } from "@/lib/analysis-queue";
 import { config } from "@/lib/config";
 import { demoDetail, demoDocuments, demoKeyDates } from "@/lib/demo/fixtures";
-import type { ContractDetail, ContractDocument, DocumentStatus, KeyDate } from "@/types";
+import { FILE_TYPES, type ContractDetail, type ContractDocument, type DocumentStatus, type FileType, type KeyDate } from "@/types";
+import { isProcessing } from "@/utils/format";
 import { demoDelay } from "./_demo";
 
 // Contract analysis can take a while the first time a document is opened
@@ -36,7 +37,86 @@ function analysisFor(id: string) {
   }));
 }
 
+export type LibrarySort = "newest" | "oldest" | "name";
+export type LibraryStatus = "all" | "processing" | "ready" | "failed";
+
+export interface LibraryQuery {
+  fileType: FileType | "ALL";
+  status: LibraryStatus;
+  q: string;
+  sort: LibrarySort;
+  offset: number;
+  limit: number;
+}
+
+export interface LibraryPage {
+  items: ContractDocument[];
+  total: number;
+}
+
+export type LibraryCounts = Record<FileType | "ALL", number>;
+
+const IN_PROGRESS: DocumentStatus[] = ["UPLOADED", "QUEUED", "PROCESSING", "OCR_PROCESSING", "CHUNKING", "EMBEDDING", "INDEXING"];
+const STATUS_PARAMS: Record<LibraryStatus, DocumentStatus[]> = {
+  all: [],
+  processing: IN_PROGRESS,
+  ready: ["COMPLETED"],
+  failed: ["FAILED"],
+};
+
+function libraryParams(query: Pick<LibraryQuery, "status" | "q">): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const s of STATUS_PARAMS[query.status]) params.append("status", s);
+  if (query.q.trim()) params.set("q", query.q.trim());
+  return params;
+}
+
+/** Demo mode: the same filters, applied to the fixtures. */
+function demoMatches(d: ContractDocument, query: Pick<LibraryQuery, "status" | "q">): boolean {
+  const statusOk =
+    query.status === "all" ||
+    (query.status === "processing" ? isProcessing(d.status) : STATUS_PARAMS[query.status].includes(d.status));
+  const q = query.q.trim().toLowerCase();
+  return statusOk && (!q || [d.title, d.counterparty, d.fileName].some((v) => v.toLowerCase().includes(q)));
+}
+
 export const documentService = {
+  /** One page of the organization's library (Phase 15): filtered by file
+   *  type, status and search, sorted and paged on the server. */
+  async library(query: LibraryQuery): Promise<LibraryPage> {
+    if (config.useDemoData) {
+      const rows = demoDocuments
+        .filter((d) => demoMatches(d, query) && (query.fileType === "ALL" || d.fileType === query.fileType))
+        .sort((a, b) =>
+          query.sort === "name"
+            ? a.title.localeCompare(b.title)
+            : (query.sort === "oldest" ? 1 : -1) * a.updatedAt.localeCompare(b.updatedAt),
+        );
+      return demoDelay({ items: rows.slice(query.offset, query.offset + query.limit), total: rows.length });
+    }
+    const params = libraryParams(query);
+    if (query.fileType !== "ALL") params.set("file_type", query.fileType);
+    params.set("sort", query.sort);
+    params.set("offset", String(query.offset));
+    params.set("limit", String(query.limit));
+    const page = await apiRequest<ApiPage<ApiDocument>>(`/documents?${params}`);
+    return { items: page.items.map(toDocument), total: page.total };
+  },
+
+  /** Documents per file type, for the library tabs. */
+  async libraryCounts(query: Pick<LibraryQuery, "status" | "q">): Promise<LibraryCounts> {
+    if (config.useDemoData) {
+      const rows = demoDocuments.filter((d) => demoMatches(d, query));
+      const counts = Object.fromEntries(FILE_TYPES.map((t) => [t, rows.filter((d) => d.fileType === t).length]));
+      return demoDelay({ ALL: rows.length, ...counts } as LibraryCounts);
+    }
+    const facets = await apiRequest<{ all: number; by_file_type: Partial<Record<FileType, number>> }>(
+      `/documents/facets?${libraryParams(query)}`,
+    );
+    const counts = Object.fromEntries(FILE_TYPES.map((t) => [t, facets.by_file_type[t] ?? 0]));
+    return { ALL: facets.all, ...counts } as LibraryCounts;
+  },
+
   async list(): Promise<ContractDocument[]> {
     if (config.useDemoData) return demoDelay(demoDocuments);
     const page = await apiRequest<ApiPage<ApiDocument>>("/documents?limit=200");

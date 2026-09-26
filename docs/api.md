@@ -16,7 +16,8 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | GET, POST | `/users` | 2 | live — ADMIN only (`user:manage`), own organization only |
 | PATCH | `/users/{id}` | 2 | live — ADMIN only; name, role, active status (not your own role/status) |
 | POST | `/documents/upload` | 3 | live — multipart `file` (+ optional `title`, `contract_type`, `counterparty`, `document_id` for a new version, `version_label`); 202 with document, version and job. ADMIN, LEGAL_MANAGER, ANALYST |
-| GET | `/documents` | 3 | live — paginated; `status`, `contract_type`, `q` (title/counterparty search) |
+| GET | `/documents` | 3, 15 | live — paginated library; `file_type` (PDF, IMAGE, WORD, EXCEL), `status` (repeatable), `contract_type`, `q` (title, counterparty or file name), `sort` (newest, oldest, name) |
+| GET | `/documents/facets` | 15 | live — counts for the library tabs: `all` and `by_file_type`, under the same `status`/`q` filters |
 | GET | `/documents/{id}`, `/documents/{id}/status` | 3 | live — detail with all versions; processing progress of the latest version |
 | DELETE | `/documents/{id}` | 3 | live — 204; removes vectors, rows and files. ADMIN, LEGAL_MANAGER |
 | GET | `/jobs/{id}` | 3 | live — job status, attempts, per-stage timings |

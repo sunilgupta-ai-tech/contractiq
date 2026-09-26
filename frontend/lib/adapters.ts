@@ -15,6 +15,7 @@ import type {
   ContractType,
   DocumentStatus,
   DocumentVersionSummary,
+  FileType,
   KeyDate,
   KeyTerm,
   QueryAnswer,
@@ -27,6 +28,7 @@ import type {
 export interface ApiVersion {
   id: string;
   label: string;
+  original_filename?: string;
   page_count: number | null;
   size_bytes: number;
   is_scanned: boolean | null;
@@ -39,6 +41,7 @@ export interface ApiDocument {
   id: string;
   title: string;
   contract_type: ContractType;
+  file_type?: FileType;
   counterparty: string | null;
   status: DocumentStatus;
   effective_date: string | null;
@@ -158,6 +161,8 @@ export function toDocument(d: ApiDocument): ContractDocument {
     title: d.title,
     counterparty: d.counterparty ?? "—",
     contractType: d.contract_type,
+    fileType: d.file_type ?? "PDF",
+    fileName: latest?.original_filename ?? d.title,
     status: d.status,
     progress: PROGRESS[d.status] ?? 0,
     pages: latest?.page_count ?? 0,

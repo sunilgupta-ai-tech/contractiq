@@ -16,6 +16,10 @@ export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 export type ContractType =
   | "MSA" | "NDA" | "SOW" | "SLA" | "DPA" | "LEASE" | "EMPLOYMENT" | "VENDOR" | "AMENDMENT" | "OTHER";
 
+/** Library tabs (Phase 15). A scanned PDF is still "PDF" (see `isScanned`). */
+export const FILE_TYPES = ["PDF", "IMAGE", "WORD", "EXCEL"] as const;
+export type FileType = (typeof FILE_TYPES)[number];
+
 export type RiskLevel = "high" | "medium" | "low";
 export type Role = "ADMIN" | "LEGAL_MANAGER" | "ANALYST" | "VIEWER";
 
@@ -32,6 +36,8 @@ export interface ContractDocument {
   title: string;
   counterparty: string;
   contractType: ContractType;
+  fileType: FileType;
+  fileName: string; // original name of the latest version
   status: DocumentStatus;
   progress: number; // 0-100 while processing
   pages: number;

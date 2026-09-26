@@ -1,108 +1,232 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FileSearch, Filter } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, FileSearch, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/states";
 import { useAsync } from "@/hooks/use-async";
 import { useInterval } from "@/hooks/use-interval";
-import { config } from "@/lib/config";
-import { documentService } from "@/services/document-service";
-import type { ContractDocument, DocumentStatus } from "@/types";
+import {
+  documentService,
+  type LibrarySort,
+  type LibraryStatus,
+} from "@/services/document-service";
+import type { FileType } from "@/types";
 import { cn } from "@/utils/cn";
 import { isProcessing } from "@/utils/format";
 import { DocumentsTable } from "./documents-table";
+import { FILE_TYPE_META } from "./file-type";
 import { UploadDropzone } from "./upload-dropzone";
 
-type Tab = "all" | "processing" | "ready" | "failed";
-const TABS: { key: Tab; label: string; match: (s: DocumentStatus) => boolean }[] = [
-  { key: "all", label: "All", match: () => true },
-  { key: "processing", label: "Processing", match: isProcessing },
-  { key: "ready", label: "Ready", match: (s) => s === "COMPLETED" },
-  { key: "failed", label: "Failed", match: (s) => s === "FAILED" },
+const PAGE_SIZE = 50;
+
+const TABS: { key: FileType | "ALL"; label: string }[] = [
+  { key: "ALL", label: "All" },
+  { key: "PDF", label: FILE_TYPE_META.PDF.plural },
+  { key: "IMAGE", label: FILE_TYPE_META.IMAGE.plural },
+  { key: "WORD", label: FILE_TYPE_META.WORD.plural },
+  { key: "EXCEL", label: FILE_TYPE_META.EXCEL.plural },
 ];
 
-const NEXT: Partial<Record<DocumentStatus, DocumentStatus>> = {
-  UPLOADED: "QUEUED", QUEUED: "PROCESSING", PROCESSING: "OCR_PROCESSING", OCR_PROCESSING: "CHUNKING",
-  CHUNKING: "EMBEDDING", EMBEDDING: "INDEXING", INDEXING: "COMPLETED",
-};
+const STATUSES: { key: LibraryStatus; label: string }[] = [
+  { key: "all", label: "Any status" },
+  { key: "processing", label: "Processing" },
+  { key: "ready", label: "Ready" },
+  { key: "failed", label: "Failed" },
+];
 
+const SORTS: { key: LibrarySort; label: string }[] = [
+  { key: "newest", label: "Newest first" },
+  { key: "oldest", label: "Oldest first" },
+  { key: "name", label: "Name A–Z" },
+];
+
+/** The organization's document library (Phase 15): every file type in one
+ *  place, filtered, searched, sorted and paged on the server so it stays
+ *  fast with thousands of documents. */
 export function DocumentsView() {
-  const { data, error, loading, reload } = useAsync(() => documentService.list(), []);
-  const [docs, setDocs] = useState<ContractDocument[]>([]);
-  const [tab, setTab] = useState<Tab>("all");
+  const [fileType, setFileType] = useState<FileType | "ALL">("ALL");
+  const [status, setStatus] = useState<LibraryStatus>("all");
+  const [sort, setSort] = useState<LibrarySort>("newest");
+  const [input, setInput] = useState("");
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(0);
 
+  // Any change of filter starts again from the first page.
+  const refilter =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      set(value);
+      setPage(0);
+    };
+
+  // Search as you type, once typing pauses.
   useEffect(() => {
-    if (data) setDocs(data);
-  }, [data]);
+    const next = input.trim();
+    if (next === q) return;
+    const timer = setTimeout(() => {
+      setQ(next);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [input, q]);
 
-  // Poll while anything is in flight. In demo mode we advance the pipeline
-  // locally; against the API this re-fetches `/documents/{id}/status`.
-  const inFlight = docs.some((d) => isProcessing(d.status));
-  useInterval(
-    () => {
-      if (!config.useDemoData) return reload();
-      setDocs((list) =>
-        list.map((d) => {
-          if (!isProcessing(d.status)) return d;
-          const progress = Math.min(100, d.progress + 7);
-          const status = progress >= 100 ? "COMPLETED" : progress % 21 < 7 ? (NEXT[d.status] ?? d.status) : d.status;
-          return { ...d, progress, status, pages: d.pages || 12, updatedAt: new Date().toISOString() };
-        }),
-      );
-    },
-    inFlight ? 1500 : null,
+  const list = useAsync(
+    () => documentService.library({ fileType, status, q, sort, offset: page * PAGE_SIZE, limit: PAGE_SIZE }),
+    [fileType, status, q, sort, page],
   );
+  const counts = useAsync(() => documentService.libraryCounts({ status, q }), [status, q]);
 
-  const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.key, docs.filter((d) => t.match(d.status)).length])), [docs]);
-  const visible = docs.filter((d) => TABS.find((t) => t.key === tab)!.match(d.status));
+  const items = list.data?.items ?? [];
+  const total = list.data?.total ?? 0;
+  const reload = () => {
+    list.reload();
+    counts.reload();
+  };
+
+  // Keep processing documents' status current.
+  useInterval(reload, items.some((d) => isProcessing(d.status)) ? 3000 : null);
+
+  const filtered = Boolean(q) || status !== "all" || fileType !== "ALL";
+  const first = total ? page * PAGE_SIZE + 1 : 0;
+  const last = Math.min(total, (page + 1) * PAGE_SIZE);
 
   return (
     <>
       <PageHeader
-        eyebrow="Repository"
-        title="Contracts"
-        description="Upload agreements, amendments and new versions. Each one is parsed, OCR'd where needed, split along its clause structure and indexed for cited retrieval."
+        eyebrow="Library"
+        title="Documents"
+        description="Every file your organization has uploaded, in one place. Only members of your organization can see them."
       />
       <div className="space-y-5">
-        <UploadDropzone onUploaded={(doc) => setDocs((list) => [doc, ...list])} />
-        {error && <ErrorState error={error} onRetry={reload} />}
+        <UploadDropzone onUploaded={reload} />
+        {list.error && <ErrorState error={list.error} onRetry={reload} />}
         <Card>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">
-            <div role="tablist" className="flex gap-1 rounded-lg bg-sunken p-1">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
+            <div role="tablist" aria-label="File type" className="flex flex-wrap gap-1 rounded-lg bg-sunken p-1">
               {TABS.map((t) => (
-                <button
+                <TabButton
                   key={t.key}
-                  role="tab"
-                  aria-selected={tab === t.key}
-                  onClick={() => setTab(t.key)}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-[13px] font-medium transition",
-                    tab === t.key ? "bg-surface text-ink shadow-card" : "text-ink-2 hover:text-ink",
-                  )}
-                >
-                  {t.label} <span className="num ml-1 text-ink-3">{counts[t.key] ?? 0}</span>
-                </button>
+                  active={fileType === t.key}
+                  onClick={() => refilter(setFileType)(t.key)}
+                  label={t.label}
+                  count={counts.data?.[t.key]}
+                />
               ))}
             </div>
-            <button className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] text-ink-2 hover:bg-sunken">
-              <Filter className="h-3.5 w-3.5" /> Type, counterparty, risk
-            </button>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <label className="group flex h-9 w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 text-ink-3 focus-within:border-brand/50 sm:w-64">
+                <Search className="h-4 w-4 shrink-0" />
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Search name or file…"
+                  aria-label="Search documents"
+                  className="h-full w-full bg-transparent text-[13px] text-ink placeholder:text-ink-3 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                />
+                {input && (
+                  <button onClick={() => setInput("")} aria-label="Clear search" className="rounded p-0.5 hover:text-ink">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </label>
+              <Select label="Status" value={status} options={STATUSES} onChange={refilter(setStatus)} />
+              <Select label="Sort" value={sort} options={SORTS} onChange={refilter(setSort)} />
+            </div>
           </div>
-          {loading && !docs.length ? (
+
+          {list.loading && !list.data ? (
             <div className="space-y-3 p-5">
-              {Array.from({ length: 5 }).map((_, i) => (
+              {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-10" />
               ))}
             </div>
-          ) : visible.length ? (
-            <DocumentsTable docs={visible} />
+          ) : items.length ? (
+            <DocumentsTable docs={items} />
           ) : (
-            <EmptyState icon={FileSearch} title="Nothing here yet" body="No contracts match this filter." />
+            <EmptyState
+              icon={FileSearch}
+              title={filtered ? "No matching documents" : "No documents yet"}
+              body={filtered ? "Try another tab, status or search." : "Upload a file above to start your library."}
+            />
+          )}
+
+          {total > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3 text-[12.5px] text-ink-3">
+              <span className="num">
+                {first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}
+              </span>
+              <div className="flex items-center gap-1">
+                <PageButton label="Previous page" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </PageButton>
+                <PageButton label="Next page" disabled={last >= total} onClick={() => setPage((p) => p + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </PageButton>
+              </div>
+            </div>
           )}
         </Card>
       </div>
     </>
+  );
+}
+
+function TabButton({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count?: number }) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        "rounded-md px-3 py-1 text-[13px] font-medium transition",
+        active ? "bg-surface text-ink shadow-card" : "text-ink-2 hover:text-ink",
+      )}
+    >
+      {label}
+      <span className="num ml-1.5 text-ink-3">{count === undefined ? "·" : count.toLocaleString()}</span>
+    </button>
+  );
+}
+
+function Select<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { key: T; label: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value as T)}
+      className="h-9 rounded-lg border border-line bg-surface px-2.5 text-[13px] text-ink-2 focus:border-brand/50 focus:outline-none"
+    >
+      {options.map((o) => (
+        <option key={o.key} value={o.key}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function PageButton({ label, disabled, onClick, children }: { label: string; disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="grid h-8 w-8 place-items-center rounded-lg border border-line text-ink-2 transition hover:bg-sunken disabled:pointer-events-none disabled:opacity-40"
+    >
+      {children}
+    </button>
   );
 }

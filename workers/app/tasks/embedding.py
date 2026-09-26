@@ -28,6 +28,7 @@ from sqlalchemy import select
 
 from app.core.logging import get_logger, tenant_id_ctx
 from app.db.models import Document, DocumentStatus, DocumentVersion
+from app.db.tenancy import bind_tenant
 
 from ..services.pipeline import StageContext, embed_and_index
 
@@ -44,6 +45,7 @@ async def reembed_tenant(ctx: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     resources = ctx["resources"]
     tenant_id_ctx.set(tenant_id)
     async with resources.db.session_factory() as session:
+        await bind_tenant(session, tenant_id)
         rows = (
             await session.execute(
                 select(DocumentVersion, Document)

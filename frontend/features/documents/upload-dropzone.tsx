@@ -64,7 +64,7 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
           Digital or scanned · up to {config.maxUploadMb} MB · processed in the background with OCR, clause detection and indexing.
         </p>
         <p className="mt-2 inline-flex items-center gap-1.5 text-2xs text-ink-3">
-          <Lock className="h-3 w-3" /> Encrypted at rest and visible only to Acme Legal.
+          <Lock className="h-3 w-3" /> Stored per organization and visible only to your organization.
         </p>
       </div>
       <input ref={input} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => void handleFiles(e.target.files)} />
