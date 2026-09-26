@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Menu, Search } from "lucide-react";
+import { Bell, LogOut, Menu, Search } from "lucide-react";
+import { signOut } from "@/lib/api-client";
 import { config } from "@/lib/config";
 import { initials, useMe } from "@/lib/session";
 
@@ -10,6 +11,23 @@ export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
   const me = useMe();
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+
+  // Close the account menu on an outside click or Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menu.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   // ⌘K / Ctrl+K focuses the question box.
   useEffect(() => {
@@ -63,7 +81,14 @@ export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
           <Bell className="h-[18px] w-[18px]" />
           <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-danger" />
         </button>
-        <button className="flex items-center gap-2.5 rounded-lg py-1 pl-1 pr-2 hover:bg-sunken" aria-label="Account">
+        <div ref={menu} className="relative">
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className="flex items-center gap-2.5 rounded-lg py-1 pl-1 pr-2 hover:bg-sunken"
+            aria-label="Account"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
           <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-soft text-[12px] font-semibold text-brand-ink ring-1 ring-brand/20">
             {me ? initials(me.name) : ""}
           </span>
@@ -72,6 +97,25 @@ export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
             <span className="block text-2xs text-ink-3">{me?.role ?? "\u00a0"}</span>
           </span>
         </button>
+          {menuOpen && (
+            <div role="menu" className="absolute right-0 top-11 z-30 w-60 rounded-xl border border-line bg-surface p-1.5 shadow-lift">
+              <div className="px-3 py-2">
+                <p className="truncate text-[13px] font-medium text-ink">{me?.name}</p>
+                <p className="truncate text-2xs text-ink-3">
+                  {me?.role} · {me?.organization}
+                </p>
+              </div>
+              <div className="my-1 h-px bg-line" />
+              <button
+                role="menuitem"
+                onClick={() => void signOut()}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-ink-2 hover:bg-sunken hover:text-ink"
+              >
+                <LogOut className="h-4 w-4" /> Sign out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

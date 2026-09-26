@@ -98,4 +98,21 @@ describe("session renewal", () => {
     expect(hasSession()).toBe(false);
     vi.unstubAllEnvs();
   });
+
+  it("signs out: revokes the refresh token, forgets the session, goes to /login", async () => {
+    const win = browser();
+    vi.stubEnv("NEXT_PUBLIC_USE_DEMO_DATA", "false");
+    const { signOut, setSession, hasSession } = await import("@/lib/api-client");
+    setSession("access", "refresh-9");
+    const sent: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      sent.push(`${url.split("/api/v1")[1]} ${String(init.body)}`);
+      return { status: 204, ok: true, json: async () => null };
+    }));
+    await signOut();
+    expect(sent).toEqual(['/auth/logout {"refresh_token":"refresh-9"}']);
+    expect(hasSession()).toBe(false);
+    expect(win.location.assign).toHaveBeenCalledWith("/login");
+    vi.unstubAllEnvs();
+  });
 });

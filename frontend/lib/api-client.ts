@@ -116,6 +116,25 @@ export function refreshSession(): Promise<boolean> {
   return renewal;
 }
 
+/** Sign out: revoke the refresh token on the server (best effort; the user
+ *  is signed out locally either way), forget both tokens, go to /login. */
+export async function signOut(): Promise<void> {
+  const refresh = storage()?.getItem(REFRESH_KEY);
+  if (refresh && !config.useDemoData) {
+    try {
+      await fetch(`${config.apiBaseUrl}${config.apiPrefix}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refresh }),
+      });
+    } catch {
+      // offline: the token still expires on its own
+    }
+  }
+  clearSession();
+  if (typeof window !== "undefined") window.location.assign("/login");
+}
+
 /** The session is over (renewal failed): sign in again. */
 function onUnauthorized(path: string): void {
   if (path.startsWith("/auth/") || typeof window === "undefined") return;

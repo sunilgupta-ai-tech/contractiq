@@ -170,6 +170,23 @@ class AuthService:
             raise UnauthorizedError("This session has expired. Please sign in again.")
         return self._issue_tokens(user)
 
+    async def logout(self, refresh_token: str) -> None:
+        """End a session: mark its refresh token as used, so it can never be
+        renewed again. Idempotent, and silent about invalid or already-used
+        tokens (sign-out must always succeed from the user's point of view).
+
+        The short-lived access token stays valid until it expires
+        (ACCESS_TOKEN_EXPIRE_MINUTES); the client discards it immediately.
+        """
+        try:
+            claims = decode_token(self.settings, refresh_token, expected_type="refresh")
+        except UnauthorizedError:
+            return  # expired or invalid: nothing left to revoke
+        jti = claims.get("jti")
+        if jti:
+            await claim_refresh_token(self.redis, jti, int(claims["exp"]))
+            logger.info("logout", extra={"user_id": claims.get("sub")})
+
     async def _is_enabled(self, user: User) -> bool:
         if not user.is_active:
             return False

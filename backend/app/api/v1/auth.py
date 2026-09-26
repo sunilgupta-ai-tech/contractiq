@@ -6,7 +6,7 @@ Route handlers stay thin: validation in schemas, logic in AuthService.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from app.core.dependencies import AuthServiceDep, LoginThrottleDep, RequestMetaDep
 from app.core.exceptions import UnauthorizedError
@@ -47,6 +47,19 @@ async def login(
         raise
     await throttle.succeeded(body.email)
     return ApiResponse(data=tokens)
+
+
+@router.post(
+    "/auth/logout",
+    summary="Sign out: revoke the session's refresh token",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def logout(body: RefreshRequest, service: AuthServiceDep) -> Response:
+    """Always 204. The refresh token can no longer renew the session; the
+    client discards its access token (which expires on its own shortly)."""
+    await service.logout(body.refresh_token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

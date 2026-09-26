@@ -140,3 +140,14 @@ def test_me_includes_the_organization(api, cleanup):
     me = api.get("/api/v1/users/me", headers=auth(tokens)).json()["data"]
     assert me["organization_name"] == "Profile Org" and me["member_count"] == 1
     assert me["role"] == "ADMIN" and "password_hash" not in me
+
+
+def test_logout_revokes_the_refresh_token(api, cleanup):
+    tokens, _ = register(api, cleanup, "Logout Org")
+    body = {"refresh_token": tokens["refresh_token"]}
+    assert api.post("/api/v1/auth/logout", json=body).status_code == 204
+    # The signed-out session can't be renewed...
+    assert api.post("/api/v1/auth/refresh", json=body).status_code == 401
+    # ...and signing out again (or with garbage) still succeeds quietly.
+    assert api.post("/api/v1/auth/logout", json=body).status_code == 204
+    assert api.post("/api/v1/auth/logout", json={"refresh_token": "junk"}).status_code == 204
