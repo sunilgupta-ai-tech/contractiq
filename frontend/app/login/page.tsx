@@ -23,11 +23,14 @@ export default function LoginPage() {
           </ul>
         </div>
       </section>
-      <section className="flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm">
-          <Logo className="mb-10 lg:hidden" />
-          <h1 className="display text-[30px]">Sign in</h1>
-          <p className="mt-1.5 text-[14px] text-ink-2">Use your organization account.</p>
+      <section className="relative flex items-center justify-center overflow-hidden px-5 py-12 sm:px-8">
+        {/* Soft brand glow behind the card; purely decorative. */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/3 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/10 blur-3xl"
+          aria-hidden
+        />
+        <div className="relative w-full max-w-[420px]">
+          <Logo className="mb-8 lg:hidden" />
           <LoginForm />
         </div>
       </section>
