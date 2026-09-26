@@ -60,8 +60,8 @@ export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
           <Search className="h-4 w-4 shrink-0" />
           <input
             ref={input}
-            aria-label="Ask about your contracts"
-            placeholder="Ask about your contracts… (Enter)"
+            aria-label="Ask about your documents"
+            placeholder="Ask about your documents… (Enter)"
             className="w-full bg-transparent text-[13.5px] text-ink placeholder:text-ink-3 focus:outline-none"
           />
           <kbd className="hidden rounded border border-line bg-sunken px-1.5 font-mono text-2xs text-ink-3 sm:block">⌘K</kbd>

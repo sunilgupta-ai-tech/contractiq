@@ -15,7 +15,7 @@ export const PRODUCT = {
   pitch: "Ask anything across all your documents: reports, contracts, scans and registers. Get answers you can verify, down to the page.",
   /** ~155 characters: the length search engines show in results. */
   seoDescription:
-    "DocuNexa AI is an enterprise document intelligence platform: ask questions across all your documents and get answers cited to the exact page.",
+    "DocuNexa AI is an enterprise document intelligence platform: ask questions across PDFs, scans, Word, Excel and images, with answers cited to the source.",
   keywords: [
     "document intelligence",
     "enterprise document AI",
@@ -27,7 +27,7 @@ export const PRODUCT = {
     "grounded citations",
   ],
   formats: {
-    available: ["PDF", "Scanned PDF"],
-    planned: ["Word", "Excel", "Images"],
+    available: ["PDF", "Scanned PDF", "Word", "Excel", "Images", "Handwriting"],
+    planned: [] as string[],
   },
 } as const;

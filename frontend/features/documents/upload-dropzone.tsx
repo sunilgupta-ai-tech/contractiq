@@ -7,7 +7,7 @@ import { config } from "@/lib/config";
 import { documentService } from "@/services/document-service";
 import type { ContractDocument } from "@/types";
 import { cn } from "@/utils/cn";
-import { validateContractFile } from "@/utils/validation";
+import { UPLOAD_ACCEPT, validateUploadFile } from "@/utils/validation";
 
 interface Upload {
   name: string;
@@ -25,7 +25,7 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
 
   async function handleFiles(files: FileList | null) {
     for (const file of Array.from(files ?? [])) {
-      const check = validateContractFile(file, config.maxUploadMb);
+      const check = validateUploadFile(file, config.maxUploadMb);
       setUploads((list) => [{ name: file.name, pct: 0, error: check.ok ? undefined : check.reason }, ...list].slice(0, 4));
       if (!check.ok) continue;
       try {
@@ -59,15 +59,15 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
         <UploadCloud className="h-6 w-6" />
       </span>
       <div className="flex-1">
-        <p className="font-medium text-ink">Drop contract PDFs here</p>
+        <p className="font-medium text-ink">Drop documents here</p>
         <p className="mt-0.5 text-[13px] text-ink-2">
-          Digital or scanned · up to {config.maxUploadMb} MB · processed in the background with OCR, clause detection and indexing.
+          PDF (digital or scanned), JPG, PNG, Word (.docx) or Excel (.xlsx) · up to {config.maxUploadMb} MB · handwriting and registers are read too.
         </p>
         <p className="mt-2 inline-flex items-center gap-1.5 text-2xs text-ink-3">
           <Lock className="h-3 w-3" /> Stored per organization and visible only to your organization.
         </p>
       </div>
-      <input ref={input} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => void handleFiles(e.target.files)} />
+      <input ref={input} type="file" accept={UPLOAD_ACCEPT} multiple hidden onChange={(e) => void handleFiles(e.target.files)} />
       <Button onClick={() => input.current?.click()}>
         <FileUp className="h-4 w-4" /> Choose files
       </Button>

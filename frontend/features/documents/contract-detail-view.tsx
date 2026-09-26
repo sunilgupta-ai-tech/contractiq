@@ -17,6 +17,8 @@ import type { Clause } from "@/types";
 import { cn } from "@/utils/cn";
 import { formatDate } from "@/utils/format";
 import { parseMarkdownTable } from "@/utils/markdown-table";
+import { ACCEPT_BY_FILE_TYPE } from "@/utils/validation";
+import { fileTypeLabel } from "./file-type";
 
 /** A clause's text, or a real table when the clause is a table. */
 function ClauseText({ text }: { text: string }) {
@@ -86,7 +88,9 @@ export function ContractDetailView({ id }: { id: string }) {
             </div>
             <h1 className="display text-[30px] leading-tight">{doc.title}</h1>
             <p className="mt-1 text-[13.5px] text-ink-2">
-              {doc.counterparty} · effective {formatDate(doc.effectiveDate)} · expires {formatDate(doc.expiryDate)}
+              {doc.counterparty !== "—" || doc.effectiveDate || doc.expiryDate
+                ? `${doc.counterparty} · effective ${formatDate(doc.effectiveDate)} · expires ${formatDate(doc.expiryDate)}`
+                : `${doc.fileName} · ${fileTypeLabel(doc)}`}
             </p>
           </div>
           <div className="flex gap-2">
@@ -95,7 +99,7 @@ export function ContractDetailView({ id }: { id: string }) {
                 <input
                   ref={fileInput}
                   type="file"
-                  accept="application/pdf,.pdf"
+                  accept={ACCEPT_BY_FILE_TYPE[doc.fileType]}
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -112,7 +116,7 @@ export function ContractDetailView({ id }: { id: string }) {
               <Button variant="secondary"><GitCompareArrows className="h-4 w-4" /> Compare versions</Button>
             </Link>
             <Link href={`/assistant?doc=${doc.id}`}>
-              <Button><MessageSquareText className="h-4 w-4" /> Ask this contract</Button>
+              <Button><MessageSquareText className="h-4 w-4" /> Ask this document</Button>
             </Link>
           </div>
         </div>

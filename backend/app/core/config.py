@@ -118,6 +118,18 @@ class Settings(BaseSettings):
     # Captions/summaries cached in Redis by content hash (per tenant), so a
     # new version with the same figures costs nothing. 0 disables.
     caption_cache_ttl_s: int = 30 * 24 * 3600
+    # Handwriting / register transcription (Phase 16): scanned pages and
+    # photos whose OCR is weak are transcribed by the vision model. Clean
+    # print never triggers it; the per-document cap bounds the cost.
+    handwriting_transcription_enabled: bool = True
+    transcribe_below_ocr_confidence: float = 70.0
+    max_transcribed_pages_per_document: int = 20
+
+    # --- Word, Excel and image uploads (worker, Phase 16) ---
+    # Bounds the work (and embedding cost) of a huge workbook.
+    max_spreadsheet_cells: int = 200_000
+    # Photos are scaled down to this long side before OCR (bounds OCR time).
+    max_image_side_px: int = 4000
 
     # --- Chunking (worker, Phase 5) ---
     # Sizes are *estimated* tokens (~4 chars each; see app/chunking/tokens.py).

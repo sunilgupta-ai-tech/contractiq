@@ -34,6 +34,10 @@ pdfplumber==0.11.10
 # Python wrapper only; the `tesseract` binary is installed in workers/Dockerfile.
 pytesseract==0.3.13
 pillow==12.3.0
+# Word and Excel uploads (Phase 16). Legacy .doc/.xls are refused rather than
+# converted, which would need LibreOffice in the worker image.
+python-docx==1.2.0
+openpyxl==3.1.5
 # unstructured[pdf] deliberately not used — see app/document_processing/unstructured_parser.py
 
 # --- Agent workflow (Phase 8) ---

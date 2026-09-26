@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { validateContractFile, validateQuestion } from "@/utils/validation";
+import { validateQuestion, validateUploadFile } from "@/utils/validation";
 
-describe("validateContractFile", () => {
+describe("validateUploadFile", () => {
   const pdf = { name: "msa.pdf", type: "application/pdf", size: 1024 };
-  it("accepts a PDF under the limit", () => expect(validateContractFile(pdf, 50).ok).toBe(true));
-  it("rejects non-PDF extensions", () => expect(validateContractFile({ ...pdf, name: "msa.docx" }, 50).ok).toBe(false));
-  it("rejects a spoofed MIME type", () => expect(validateContractFile({ ...pdf, type: "text/html" }, 50).ok).toBe(false));
-  it("rejects empty files", () => expect(validateContractFile({ ...pdf, size: 0 }, 50).ok).toBe(false));
-  it("rejects files over the limit", () => expect(validateContractFile({ ...pdf, size: 51 * 1024 * 1024 }, 50).ok).toBe(false));
+  it("accepts a PDF under the limit", () => expect(validateUploadFile(pdf, 50).ok).toBe(true));
+  it.each(["scan.JPG", "receipt.jpeg", "photo.png", "policy.docx", "data.xlsx"])("accepts %s", (name) =>
+    expect(validateUploadFile({ ...pdf, name, type: "" }, 50).ok).toBe(true),
+  );
+  it("rejects unsupported extensions", () => expect(validateUploadFile({ ...pdf, name: "tool.exe" }, 50).ok).toBe(false));
+  it("explains legacy Office formats", () => {
+    const result = validateUploadFile({ ...pdf, name: "old.doc" }, 50);
+    expect(result.ok ? "" : result.reason).toContain(".docx");
+  });
+  it("rejects a spoofed MIME type", () => expect(validateUploadFile({ ...pdf, type: "text/html" }, 50).ok).toBe(false));
+  it("rejects empty files", () => expect(validateUploadFile({ ...pdf, size: 0 }, 50).ok).toBe(false));
+  it("rejects files over the limit", () => expect(validateUploadFile({ ...pdf, size: 51 * 1024 * 1024 }, 50).ok).toBe(false));
 });
 
 describe("validateQuestion", () => {

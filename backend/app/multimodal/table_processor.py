@@ -51,7 +51,9 @@ class TableProcessor:
     async def summarise_document(self, doc: ParsedDocument, *, tenant_id: str) -> None:
         """Summarise up to `max_tables` tables in `doc`, in place.
         Raises LLMConfigError if the model cannot be used at all."""
-        tables = [table for page in doc.pages for table in page.tables]
+        # Tables that already have a summary (from the parser, or from an
+        # earlier run saved in parsed.json) are not sent again.
+        tables = [table for page in doc.pages for table in page.tables if table.summary is None]
         self.service.stats.tables += len(tables)
         await run_all(self._summarise(t, tenant_id) for t in tables[: self.max_tables])
 

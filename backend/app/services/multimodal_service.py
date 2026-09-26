@@ -30,10 +30,47 @@ from app.document_processing.parser import ParsedDocument
 from app.llm.base import LLMConfigError, LLMProvider
 from app.multimodal.image_processor import ImageProcessor
 from app.multimodal.table_processor import TableProcessor
+from app.multimodal.transcriber import PageToTranscribe, Transcriber
 from app.multimodal.vision import MultimodalStats, VisionService
 from app.storage import ObjectStorage
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class TranscriptionResult:
+    stats: MultimodalStats
+    transcribed_pages: list[int] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+async def transcribe_pages(
+    doc: ParsedDocument,
+    targets: list[PageToTranscribe],
+    *,
+    tenant_id: str,
+    settings: Settings,
+    provider_factory: Callable[[], LLMProvider],
+    storage: ObjectStorage,
+    redis: Redis | None,
+) -> TranscriptionResult:
+    """Replace weak OCR on `targets` with the vision model's transcription
+    (Phase 16), in place. Enrichment like captions: never fails the document."""
+    stats = MultimodalStats()
+    if not targets:
+        return TranscriptionResult(stats)
+    transcriber: Transcriber | None = None
+    try:
+        service = VisionService(provider_factory(), settings, redis, stats=stats)
+        transcriber = Transcriber(service, storage)
+        await transcriber.transcribe(doc.pages, targets, tenant_id=tenant_id)
+    except LLMConfigError as exc:
+        logger.warning("transcription_unavailable", extra={"error": str(exc)})
+        return TranscriptionResult(stats, warnings=[f"Handwriting could not be transcribed: {exc}"])
+    warnings = [
+        f"Page {n} could not be transcribed; its OCR text is kept." for n in transcriber.failed
+    ]
+    return TranscriptionResult(stats, sorted(transcriber.transcribed), warnings)
 
 
 @dataclass

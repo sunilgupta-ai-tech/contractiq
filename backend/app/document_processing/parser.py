@@ -51,6 +51,7 @@ NON_CONTENT_KINDS = frozenset({BlockKind.TABLE_TEXT, BlockKind.HEADER, BlockKind
 class TextSource(StrEnum):
     TEXT_LAYER = "text_layer"  # the PDF contained real, selectable text
     OCR = "ocr"  # text recognised from a page image by Tesseract
+    VISION = "vision"  # transcribed by the vision model (handwriting, registers; Phase 16)
 
 
 @dataclass
@@ -207,3 +208,10 @@ class CorruptPdfError(PdfProcessingError):
 
 class TooManyPagesError(PdfProcessingError):
     user_message = "The PDF has too many pages to process."
+
+
+class UnreadableFileError(PdfProcessingError):
+    """A Word, Excel or image file that passed upload checks but cannot be
+    read (Phase 16). Permanent, like a corrupt PDF."""
+
+    user_message = "The file is damaged or could not be read."

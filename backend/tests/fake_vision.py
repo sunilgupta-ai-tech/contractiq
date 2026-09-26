@@ -12,6 +12,15 @@ from app.llm.base import ChatMessage, LLMResult
 
 CAPTION = "Bar chart of monthly service credits; the highest value is 5% in March."
 TABLE_SUMMARY = "Payment milestones with the week each is due and its fee."
+# Reply to the handwriting / register transcription prompt (Phase 16).
+TRANSCRIPT = """Stock register
+
+| Date | Item | Qty |
+| --- | --- | --- |
+| 03/03 | Cement | 40 |
+| 04/03 | Steel | 12 |
+
+Checked by R. Mehta."""
 
 
 class FakeVision:
@@ -26,7 +35,9 @@ class FakeVision:
         self, messages: list[ChatMessage], *, temperature: float = 0.0, max_tokens: int = 1024
     ) -> LLMResult:
         self.calls.append(messages)
-        if any(m.images for m in messages):
+        if any(m.images for m in messages) and "including handwriting" in messages[-1].content:
+            text = TRANSCRIPT
+        elif any(m.images for m in messages):
             text = self.reply or f"KIND: chart\nDESCRIPTION: {CAPTION}"
         else:
             text = TABLE_SUMMARY

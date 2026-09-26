@@ -8,6 +8,13 @@ import type { ContractDocument } from "@/types";
 import { formatBytes, formatDate, relativeTime } from "@/utils/format";
 import { FileTypeIcon, fileTypeLabel } from "./file-type";
 
+/** " · 12 pages", " · 3 sheets"; nothing for a single image. */
+function extent(doc: ContractDocument): string {
+  if (!doc.pages || doc.fileType === "IMAGE") return "";
+  const unit = doc.fileType === "EXCEL" ? "sheet" : "page";
+  return ` · ${doc.pages} ${unit}${doc.pages === 1 ? "" : "s"}`;
+}
+
 export function DocumentsTable({ docs }: { docs: ContractDocument[] }) {
   return (
     <div className="overflow-x-auto scroll-thin">
@@ -34,7 +41,7 @@ export function DocumentsTable({ docs }: { docs: ContractDocument[] }) {
                     <span className="block truncate text-2xs text-ink-3">
                       {doc.fileName}
                       {doc.counterparty !== "—" && ` · ${doc.counterparty}`}
-                      {doc.pages ? ` · ${doc.pages} pages` : ""}
+                      {extent(doc)}
                     </span>
                     {doc.errorMessage && <span className="mt-0.5 block text-2xs text-danger">{doc.errorMessage}</span>}
                   </span>

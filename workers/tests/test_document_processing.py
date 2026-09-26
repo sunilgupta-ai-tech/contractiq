@@ -35,6 +35,7 @@ from app.vectorstore.qdrant import create_qdrant, tenant_filter
 from tests import pdf_factory
 from tests.fake_embeddings import FakeEmbeddings
 from tests.fake_vision import CAPTION, TABLE_SUMMARY, FakeVision
+from tests.unit.test_upload_formats import make_docx, make_image, make_xlsx
 
 pytestmark = pytest.mark.skipif(
     os.getenv("CONTRACTIQ_INTEGRATION") != "1", reason="set CONTRACTIQ_INTEGRATION=1"
@@ -93,7 +94,13 @@ async def env(tmp_path):
     await db.dispose()
 
 
-async def _seed(resources: _Resources, pdf: bytes, *, newer_version_exists: bool = False) -> str:
+async def _seed(
+    resources: _Resources,
+    pdf: bytes,
+    *,
+    newer_version_exists: bool = False,
+    stored: str = "original.pdf",
+) -> str:
     """Create org/document/version/job rows and store the PDF; returns the job ID.
 
     With `newer_version_exists`, a v2 row is also created (not processed), so
@@ -109,7 +116,7 @@ async def _seed(resources: _Resources, pdf: bytes, *, newer_version_exists: bool
         s.add(doc)
         await s.flush()
         version_id = uuid.uuid4()
-        key = f"tenants/{org.id}/documents/{doc.id}/{version_id}/original.pdf"
+        key = f"tenants/{org.id}/documents/{doc.id}/{version_id}/{stored}"
         await storage.put(key, pdf, "application/pdf")
         version = DocumentVersion(
             id=version_id,
@@ -307,6 +314,87 @@ async def test_processed_documents_are_counted_in_metrics(env):
         "contractiq_pipeline_stage_duration_seconds_count", {"stage": "parse"}
     )
     assert parse_count and parse_count >= 2
+
+
+# --- Phase 16: Word, Excel and images through the same pipeline -------------------
+
+
+async def _processed(env, data: bytes, stored: str):
+    db, resources = env
+    job_id = await _seed(resources, data, stored=stored)
+    result = await process_document({"resources": resources}, job_id)
+    job, version, doc = await _load(db, job_id)
+    assert result["status"] == "COMPLETED", version.error_message
+    meta = version.extraction_metadata
+    parsed = json.loads(await resources.storage.get(meta["parsed_key"]))
+    chunks = json.loads(await resources.storage.get(meta["chunks_key"]))
+    children = [c for c in chunks["chunks"] if c["level"] == "child"]
+    return resources, version, meta, parsed, children
+
+
+async def test_word_document_is_indexed_with_sections_and_pages(env):
+    resources, version, meta, parsed, children = await _processed(env, make_docx(), "original.docx")
+    assert meta["format"] == "docx" and version.page_count == 2
+    assert version.is_scanned is False and meta["scanned_pages"] == []
+    assert meta["transcribed_pages"] == []
+    texts = " ".join(c["text"] for c in children)
+    assert "24 days of paid leave" in texts and "medical certificate" in texts
+    (table,) = [c for c in children if c["chunk_type"] == "table"]
+    assert "| Manager | 28 |" in table["text"]
+    sick = next(c for c in children if "medical certificate" in c["text"])
+    assert sick["page_start"] == 2 and sick["section"] == "2"
+
+
+async def test_excel_workbook_is_indexed_sheet_by_sheet(env):
+    resources, version, meta, parsed, children = await _processed(
+        env, make_xlsx(rows=200), "original.xlsx"
+    )
+    assert meta["format"] == "xlsx"
+    tables = [c for c in children if c["chunk_type"] == "table"]
+    assert len(tables) > 1
+    assert all(t["section"] == "1" and t["section_title"] == "Invoices" for t in tables)
+    assert any("| INV-200 |" in t["text"] for t in tables)
+    # One model summary per sheet: continuation tables describe themselves.
+    assert meta["multimodal"]["tables_summarised"] == 1
+    assert len(resources.fake_vision.calls) == 1
+
+
+async def test_photo_of_a_handwritten_register_is_transcribed(env):
+    # A blank "photo": OCR finds no words, so the page is sent for transcription.
+    resources, version, meta, parsed, children = await _processed(
+        env, make_image("JPEG", (1200, 900)), "original.jpg"
+    )
+    assert meta["format"] == "image" and version.page_count == 1
+    assert version.is_scanned is True
+    assert meta["transcribed_pages"] == [1]
+    page = parsed["pages"][0]
+    assert {b["source"] for b in page["blocks"]} == {"vision"}
+    assert page["tables"][0]["rows"][1] == ["03/03", "Cement", "40"]
+    # The photo itself is also captioned (one call), besides the transcription.
+    assert page["images"][0]["caption"] == CAPTION
+    assert resources.fake_vision.image_calls == 2
+    texts = " ".join(c["text"] for c in children)
+    assert "Cement" in texts and "Checked by R. Mehta." in texts
+
+
+async def test_transcription_is_skipped_when_disabled(env):
+    db, resources = env
+    resources.settings = resources.settings.model_copy(
+        update={"handwriting_transcription_enabled": False}
+    )
+    job_id = await _seed(resources, make_image("PNG"), stored="original.png")
+    await process_document({"resources": resources}, job_id)
+    _, version, _ = await _load(db, job_id)
+    assert version.extraction_metadata["transcribed_pages"] == []
+
+
+async def test_unreadable_word_file_fails_permanently(env):
+    db, resources = env
+    job_id = await _seed(resources, b"PK\x03\x04 not really a docx", stored="original.docx")
+    result = await process_document({"resources": resources}, job_id)
+    job, version, _ = await _load(db, job_id)
+    assert result["status"] == "FAILED"
+    assert version.error_message == "The Word file is damaged or could not be read."
 
 
 async def test_password_protected_pdf_fails_permanently_without_retry(env):

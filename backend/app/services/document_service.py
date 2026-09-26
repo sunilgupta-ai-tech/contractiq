@@ -56,6 +56,12 @@ from app.db.repositories.document_repository import (
     DocumentVersionRepository,
     JobRepository,
 )
+from app.document_processing.formats import (
+    SUPPORTED_HINT,
+    UploadFormat,
+    detect_format,
+    format_for_storage_key,
+)
 from app.queue import enqueue_document_processing
 from app.schemas.common import Page
 from app.schemas.document import (
@@ -82,8 +88,11 @@ PDF_MIME = "application/pdf"
 ACCEPTED_MIME_TYPES = frozenset({PDF_MIME, "application/x-pdf", "application/octet-stream", ""})
 PDF_MAGIC = b"%PDF-"
 # The object key never contains the user's filename, so a crafted name
-# cannot influence where the file lands.
+# cannot influence where the file lands (original.<ext> since Phase 16).
 STORED_FILENAME = "original.pdf"
+# Declared types that contradict every accepted format (an HTML page, a
+# script) are refused outright; anything else is decided by the content.
+_REJECTED_MIME_PREFIXES = ("text/html", "application/javascript", "text/javascript")
 _READ_CHUNK = 1024 * 1024
 
 
@@ -125,9 +134,18 @@ def validate_pdf(filename: str, content_type: str | None, data: bytes) -> None:
         raise InvalidFileError("The file is not a valid PDF.")
 
 
+def validate_upload(filename: str, content_type: str | None, data: bytes) -> UploadFormat:
+    """Phase 16: PDF, JPG/PNG, .docx or .xlsx, recognised from the content
+    (app/document_processing/formats.py). Returns the detected format."""
+    declared = (content_type or "").split(";")[0].strip().lower()
+    if declared.startswith(_REJECTED_MIME_PREFIXES):
+        raise InvalidFileError(f"This file type is not supported. {SUPPORTED_HINT}")
+    return detect_format(filename, data)
+
+
 def default_title(filename: str) -> str:
-    stem = re.sub(r"\.pdf$", "", filename, flags=re.IGNORECASE)
-    return re.sub(r"[_\s]+", " ", stem).strip()[:300] or "Untitled contract"
+    stem = re.sub(r"\.(pdf|png|jpe?g|docx|xlsx)$", "", filename, flags=re.IGNORECASE)
+    return re.sub(r"[_\s]+", " ", stem).strip()[:300] or "Untitled document"
 
 
 @dataclass(frozen=True)
@@ -197,7 +215,9 @@ class DocumentService:
         metadata: UploadMetadata,
         actor_id: uuid.UUID,
         meta: RequestMeta,
+        upload_format: UploadFormat | None = None,
     ) -> UploadResult:
+        fmt = upload_format or format_for_storage_key(STORED_FILENAME)
         sha256 = hashlib.sha256(data).hexdigest()
         duplicate = await self.versions.find_live_duplicate(sha256)
         if duplicate is not None:
@@ -211,6 +231,13 @@ class DocumentService:
 
         if metadata.document_id is not None:
             document = await self.documents.get_with_versions(metadata.document_id)
+            if document.file_type is not fmt.file_type:
+                # One document is one kind of file: comparing a Word v1 with
+                # an Excel v2 would be meaningless.
+                raise InvalidFileError(
+                    f"A new version must be the same kind of file as the document "
+                    f"({document.file_type.value.title()})."
+                )
             version_number = max((v.version_number for v in document.versions), default=0) + 1
         else:
             document = await self.documents.add(
@@ -218,6 +245,7 @@ class DocumentService:
                     title=(metadata.title or default_title(filename)).strip()[:300],
                     contract_type=metadata.contract_type or ContractType.OTHER,
                     counterparty=(metadata.counterparty or None),
+                    file_type=fmt.file_type,
                     uploaded_by_id=actor_id,
                     status=DocumentStatus.QUEUED,
                     tags=[],
@@ -227,10 +255,10 @@ class DocumentService:
 
         version_id = uuid.uuid4()
         key = build_object_key(
-            str(self.tenant_id), str(document.id), str(version_id), STORED_FILENAME
+            str(self.tenant_id), str(document.id), str(version_id), fmt.stored_filename
         )
         try:
-            await self.resources.storage.put(key, data, PDF_MIME)
+            await self.resources.storage.put(key, data, fmt.mime_type)
         except Exception as exc:
             await self.session.rollback()
             raise ServiceUnavailableError(
@@ -246,7 +274,7 @@ class DocumentService:
                     label=(metadata.version_label or f"v{version_number}").strip()[:50],
                     original_filename=filename,
                     storage_key=key,
-                    mime_type=PDF_MIME,
+                    mime_type=fmt.mime_type,
                     size_bytes=len(data),
                     sha256=sha256,
                     status=DocumentStatus.QUEUED,

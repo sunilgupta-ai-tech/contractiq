@@ -6,8 +6,12 @@ The pipeline is an ordered list of stages. Each stage maps to a
 stage the worker is executing. Stage handlers are filled in phase by phase:
 
     parse  (Phase 4)  PDF text layer, tables, images      -> artifacts["parse"]
+                      (Phase 16) .docx / .xlsx read as structure; JPG/PNG
+                      wrapped in a one-page PDF and handled as a scan
     ocr    (Phase 4)  OCR scanned pages, layout, save JSON -> artifacts["parsed"]
+                      (Phase 16) render weak-OCR pages for transcription
     describe (Phase 9) caption images, summarise tables, re-save parsed.json
+                      (Phase 16) transcribe handwriting / registers first
     chunk  (Phase 5)  section/clause-aware chunks, save JSON -> artifacts["chunks"]
     embed  (Phase 6)  embeddings (Gemini by default), with cache  -> artifacts["vectors"]
     index  (Phase 6)  Qdrant upsert + prune, current-version flag
@@ -28,10 +32,20 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.chunking.models import Chunk
-from app.db.models import DocumentStatus
-from app.document_processing.parser import ParsedDocument
-from app.document_processing.pymupdf_parser import to_page_image
+from app.db.models import DocumentStatus, FileType
+from app.document_processing.docx_parser import parse_docx
+from app.document_processing.formats import format_for_storage_key
+from app.document_processing.image_input import image_to_pdf, image_to_png
+from app.document_processing.parser import (
+    PageImage,
+    ParsedDocument,
+    ParsedPage,
+    UnreadableFileError,
+)
+from app.document_processing.pymupdf_parser import open_pdf, to_page_image
+from app.document_processing.xlsx_parser import parse_xlsx
 from app.llm.base import embedding_model_label
+from app.multimodal.transcriber import PageToTranscribe, is_weak_ocr
 from app.services.chunking_service import (
     CHUNKER_VERSION,
     ChunkingOptions,
@@ -39,7 +53,7 @@ from app.services.chunking_service import (
     chunk_document,
 )
 from app.services.embedding_service import EmbeddingService
-from app.services.multimodal_service import enrich_document
+from app.services.multimodal_service import enrich_document, transcribe_pages
 from app.services.ocr_service import ocr_scanned_pages
 from app.services.pdf_service import (
     ParseResult,
@@ -67,7 +81,7 @@ class StageContext:
     tenant_id: str
     document_id: str
     version_id: str
-    storage_key: str  # where the original PDF is stored
+    storage_key: str  # where the original file is stored (original.<ext>)
     resources: Any
     # The title the user gave the document; used as the root of every
     # chunk's heading path ("Master Services Agreement > 8. Termination").
@@ -96,14 +110,31 @@ class Stage:
 
 
 async def _parse(ctx: StageContext) -> None:
-    """Read the PDF's text layer, tables and images; save the images.
+    """Read the file's text, tables and images; save the images.
 
-    Raises EncryptedPdfError/CorruptPdfError/TooManyPagesError for files
-    that cannot be processed (handled as permanent failures by the task).
+    PDFs (and images, as one-page PDFs) go through PyMuPDF; Word and Excel
+    files are read as structure (Phase 16). Raises EncryptedPdfError /
+    CorruptPdfError / TooManyPagesError / UnreadableFileError for files that
+    cannot be processed (handled as permanent failures by the task).
     """
     storage = ctx.resources.storage
-    options = PdfOptions.from_settings(ctx.resources.settings)
+    settings = ctx.resources.settings
+    options = PdfOptions.from_settings(settings)
     data: bytes = await storage.get(ctx.storage_key)
+    file_type = format_for_storage_key(ctx.storage_key).file_type
+    if file_type is FileType.WORD:
+        return await _parse_docx(ctx, data, options)
+    if file_type is FileType.EXCEL:
+        return await _parse_xlsx(ctx, data)
+    photo: tuple[bytes, int, int] | None = None
+    if file_type is FileType.IMAGE:
+        try:
+            photo = await asyncio.to_thread(
+                image_to_png, data, max_side_px=settings.max_image_side_px
+            )
+        except Exception as exc:  # decoding errors vary by image library
+            raise UnreadableFileError("The image is damaged or could not be read.") from exc
+        data = await asyncio.to_thread(image_to_pdf, *photo, dpi=options.ocr_dpi)
 
     # CPU-bound: run in a thread so the worker's event loop stays responsive.
     result: ParseResult = await asyncio.to_thread(parse_pdf, data, options)
@@ -117,8 +148,101 @@ async def _parse(ctx: StageContext) -> None:
     image_count = len(result.images)
     result.images.clear()
 
+    if photo is not None:
+        # The photo itself is captioned (what it shows: a receipt, a stamp,
+        # a whiteboard), in addition to the OCR of its text.
+        png, width, height = photo
+        key = ctx.artifact_key("images/page-1-1.png")
+        await storage.put(key, png, "image/png")
+        page = result.document.pages[0]
+        page.images.append(
+            PageImage(
+                bbox=(0.0, 0.0, page.width, page.height),
+                width_px=width,
+                height_px=height,
+                storage_key=key,
+            )
+        )
+        image_count += 1
+        result.document.metadata["format"] = "image"
+
     ctx.artifacts.update(pdf_bytes=data, parse=result, image_count=image_count)
     ctx.version_updates["page_count"] = result.document.page_count
+
+
+async def _parse_docx(ctx: StageContext, data: bytes, options: PdfOptions) -> None:
+    try:
+        parsed = await asyncio.to_thread(
+            parse_docx,
+            data,
+            max_pages=options.max_pages,
+            max_images=options.max_images,
+            min_image_dimension_px=options.min_image_dimension_px,
+        )
+    except Exception as exc:  # python-docx/lxml raise many types for broken files
+        raise UnreadableFileError("The Word file is damaged or could not be read.") from exc
+    for index, image in enumerate(parsed.images):
+        key = ctx.artifact_key(f"images/page-{image.page_number}-{index + 1}.png")
+        await ctx.resources.storage.put(key, image.png, "image/png")
+        page = parsed.document.pages[image.page_number - 1]
+        page.images.append(
+            PageImage(
+                bbox=(0.0, image.y, page.width, image.y + 1.0),
+                width_px=image.width_px,
+                height_px=image.height_px,
+                storage_key=key,
+            )
+        )
+    result = ParseResult(parsed.document, warnings=parsed.warnings)
+    ctx.artifacts.update(pdf_bytes=None, parse=result, image_count=len(parsed.images))
+    ctx.version_updates["page_count"] = parsed.document.page_count
+
+
+async def _parse_xlsx(ctx: StageContext, data: bytes) -> None:
+    try:
+        parsed = await asyncio.to_thread(
+            parse_xlsx, data, max_cells=ctx.resources.settings.max_spreadsheet_cells
+        )
+    except Exception as exc:  # openpyxl raises many types for broken files
+        raise UnreadableFileError("The Excel file is damaged or could not be read.") from exc
+    result = ParseResult(parsed.document, warnings=parsed.warnings)
+    ctx.artifacts.update(pdf_bytes=None, parse=result, image_count=0)
+    ctx.version_updates["page_count"] = parsed.document.page_count
+
+
+# Rendering resolution for pages sent to the vision model: legible
+# handwriting, at a fraction of the pixels of the 300-DPI OCR render.
+_TRANSCRIBE_DPI = 200
+
+
+def _render_pages(data: bytes, numbers: list[int]) -> list[tuple[int, bytes]]:
+    with open_pdf(data) as doc:
+        return [
+            (n, bytes(doc[n - 1].get_pixmap(dpi=_TRANSCRIBE_DPI).tobytes("png"))) for n in numbers
+        ]
+
+
+async def _weak_pages(
+    ctx: StageContext, data: bytes, pages: list[ParsedPage]
+) -> list[PageToTranscribe]:
+    """Scanned pages (and photos) whose OCR is weak, rendered and saved for
+    the describe stage to transcribe (Phase 16)."""
+    settings = ctx.resources.settings
+    if not (settings.multimodal_enabled and settings.handwriting_transcription_enabled):
+        return []
+    weak = [
+        p.number
+        for p in pages
+        if is_weak_ocr(p, min_confidence=settings.transcribe_below_ocr_confidence)
+    ][: settings.max_transcribed_pages_per_document]
+    if not weak:
+        return []
+    targets = []
+    for number, png in await asyncio.to_thread(_render_pages, data, weak):
+        key = ctx.artifact_key(f"pages/page-{number}.png")
+        await ctx.resources.storage.put(key, png, "image/png")
+        targets.append(PageToTranscribe(number, key))
+    return targets
 
 
 async def _ocr(ctx: StageContext) -> None:
@@ -129,10 +253,15 @@ async def _ocr(ctx: StageContext) -> None:
     """
     result: ParseResult = ctx.artifacts["parse"]
     options = PdfOptions.from_settings(ctx.resources.settings)
-    data: bytes = ctx.artifacts.pop("pdf_bytes")  # last stage that needs the raw PDF
+    data: bytes | None = ctx.artifacts.pop("pdf_bytes")  # last stage that needs the raw PDF
 
-    ocr_warnings = await asyncio.to_thread(ocr_scanned_pages, data, result.document, options)
-    finalize_layout(result.document)
+    ocr_warnings: list[str] = []
+    if data is not None:
+        ocr_warnings = await asyncio.to_thread(ocr_scanned_pages, data, result.document, options)
+        finalize_layout(result.document)
+        ctx.artifacts["transcribe"] = await _weak_pages(ctx, data, result.document.pages)
+    # Word and Excel (data is None) have no scans, and their block kinds come
+    # from the file's own structure, so OCR and layout labelling are skipped.
 
     parsed_key = ctx.artifact_key("parsed.json")
     payload = json.dumps(result.document.to_dict(), ensure_ascii=False).encode()
@@ -147,7 +276,11 @@ async def _ocr(ctx: StageContext) -> None:
     ctx.version_updates.update(
         page_count=result.document.page_count,
         is_scanned=bool(result.document.scanned_page_numbers),
-        extraction_metadata={**summary, "parsed_key": parsed_key},
+        extraction_metadata={
+            **summary,
+            "format": result.document.metadata.get("format", "pdf"),
+            "parsed_key": parsed_key,
+        },
     )
 
 
@@ -163,6 +296,17 @@ async def _describe(ctx: StageContext) -> None:
         parsed = ParsedDocument.from_dict(json.loads(raw))
         ctx.artifacts["parsed"] = parsed
 
+    # Handwriting and registers first, so captions and table summaries see
+    # the transcribed text and tables.
+    transcription = await transcribe_pages(
+        parsed,
+        ctx.artifacts.get("transcribe", []),
+        tenant_id=ctx.tenant_id,
+        settings=ctx.resources.settings,
+        provider_factory=ctx.resources.vision,
+        storage=ctx.resources.storage,
+        redis=ctx.resources.redis,
+    )
     result = await enrich_document(
         parsed,
         tenant_id=ctx.tenant_id,
@@ -171,14 +315,19 @@ async def _describe(ctx: StageContext) -> None:
         storage=ctx.resources.storage,
         redis=ctx.resources.redis,
     )
-    if result.stats.api_calls or result.stats.cache_hits:
+    changed = result.stats.api_calls or result.stats.cache_hits
+    if changed or transcription.transcribed_pages:
         parsed_key = ctx.artifact_key("parsed.json")
         payload = json.dumps(parsed.to_dict(), ensure_ascii=False).encode()
         await ctx.resources.storage.put(parsed_key, payload, "application/json")
     metadata = ctx.version_updates.get("extraction_metadata")
     if metadata is not None:
         metadata["multimodal"] = asdict(result.stats)
-        metadata["warnings"] = metadata.get("warnings", []) + result.warnings
+        metadata["transcribed_pages"] = transcription.transcribed_pages
+        metadata["transcription"] = asdict(transcription.stats)
+        metadata["warnings"] = (
+            metadata.get("warnings", []) + transcription.warnings + result.warnings
+        )
 
 
 async def _chunk(ctx: StageContext) -> None:

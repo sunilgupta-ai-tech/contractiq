@@ -37,7 +37,7 @@ from app.services.document_service import (
     UploadMetadata,
     clean_filename,
     read_limited,
-    validate_pdf,
+    validate_upload,
 )
 
 router = APIRouter(tags=["documents"])
@@ -45,7 +45,7 @@ router = APIRouter(tags=["documents"])
 
 @router.post(
     "/documents/upload",
-    summary="Upload a contract PDF (async processing)",
+    summary="Upload a document: PDF, JPG/PNG, Word (.docx) or Excel (.xlsx)",
     response_model=ApiResponse[UploadResult],
     status_code=status.HTTP_202_ACCEPTED,
 )
@@ -55,7 +55,7 @@ async def upload_document(
     service: DocumentServiceDep,
     settings: SettingsDep,
     meta: RequestMetaDep,
-    file: Annotated[UploadFile, File(description="Contract PDF")],
+    file: Annotated[UploadFile, File(description="PDF, JPG, PNG, .docx or .xlsx")],
     title: Annotated[str | None, Form(max_length=300)] = None,
     contract_type: Annotated[ContractType | None, Form()] = None,
     counterparty: Annotated[str | None, Form(max_length=300)] = None,
@@ -68,10 +68,11 @@ async def upload_document(
     `/documents/{id}/status` for processing progress."""
     filename = clean_filename(file.filename)
     data = await read_limited(file, settings.max_upload_size_bytes)
-    validate_pdf(filename, file.content_type, data)
+    upload_format = validate_upload(filename, file.content_type, data)
     result = await service.upload(
         data=data,
         filename=filename,
+        upload_format=upload_format,
         metadata=UploadMetadata(
             title=title or None,
             contract_type=contract_type,

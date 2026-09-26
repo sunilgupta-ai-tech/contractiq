@@ -37,6 +37,8 @@ function analysisFor(id: string) {
   }));
 }
 
+const ANALYSED_TYPES = new Set<FileType>(["PDF", "WORD"]);
+
 export type LibrarySort = "newest" | "oldest" | "name";
 export type LibraryStatus = "all" | "processing" | "ready" | "failed";
 
@@ -129,7 +131,10 @@ export const documentService = {
       return demoDelay({ ...demoDetail, ...doc, clauses: demoDetail.clauses, keyTerms: demoDetail.keyTerms });
     }
     const doc = await apiRequest<ApiDocument>(`/documents/${encodeURIComponent(id)}`);
-    if (doc.status !== "COMPLETED") return toDetail(doc, null);
+    // Clause and risk analysis is for agreements (PDF or Word). A photo or a
+    // spreadsheet is searchable in the Assistant, but "missing indemnity
+    // clause" findings would be noise — and cost model calls.
+    if (doc.status !== "COMPLETED" || !ANALYSED_TYPES.has(doc.file_type ?? "PDF")) return toDetail(doc, null);
     // The document is shown even if analysis is unavailable (e.g. model not configured).
     const analysis = await analysisFor(id).catch(() => null);
     return toDetail(doc, analysis);

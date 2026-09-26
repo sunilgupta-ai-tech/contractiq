@@ -66,7 +66,8 @@ async def test_read_limited_stops_at_the_limit():
 
 def test_default_title_from_filename():
     assert default_title("Master_Services  Agreement.PDF") == "Master Services Agreement"
-    assert default_title(".pdf") == "Untitled contract"
+    assert default_title(".pdf") == "Untitled document"
+    assert default_title("Q3 register.JPEG") == "Q3 register"
 
 
 # --- HTTP layer --------------------------------------------------------------------
