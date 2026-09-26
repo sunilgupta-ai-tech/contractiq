@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, status
 
-from app.core.dependencies import AuthServiceDep, RequestMetaDep
+from app.core.dependencies import AuthServiceDep, LoginThrottleDep, RequestMetaDep
+from app.core.exceptions import UnauthorizedError
 from app.schemas.auth import LoginRequest, RefreshRequest, RegisterRequest, TokenPair
 from app.schemas.common import ApiResponse
 
@@ -34,9 +35,18 @@ async def register(
     response_model=ApiResponse[TokenPair],
 )
 async def login(
-    body: LoginRequest, service: AuthServiceDep, meta: RequestMetaDep
+    body: LoginRequest, service: AuthServiceDep, meta: RequestMetaDep, throttle: LoginThrottleDep
 ) -> ApiResponse[TokenPair]:
-    return ApiResponse(data=await service.login(body, meta))
+    """Too many failed attempts for this email from this IP (or from this IP
+    overall) returns 429 with Retry-After, before the password is checked."""
+    await throttle.check(body.email)
+    try:
+        tokens = await service.login(body, meta)
+    except UnauthorizedError:
+        await throttle.failed(body.email)
+        raise
+    await throttle.succeeded(body.email)
+    return ApiResponse(data=tokens)
 
 
 @router.post(

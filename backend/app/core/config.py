@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from enum import StrEnum
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -150,6 +150,25 @@ class Settings(BaseSettings):
     context_max_tokens: int = 6000
     # Previous question/answer pairs included for follow-up questions.
     conversation_history_turns: int = 3
+
+    # --- Guardrails (Phase 11) ---
+    # Groundedness: "flag" returns the score and unsupported sentences with the
+    # answer; "enforce" withholds answers scoring below GROUNDING_MIN_SCORE or
+    # stating a number their evidence doesn't contain. See
+    # app/guardrails/evidence_validator.py before switching to enforce.
+    grounding_mode: Literal["flag", "enforce"] = "flag"
+    grounding_min_score: float = 0.5
+    # Rate limits (Redis, fixed windows). Fail open if Redis is down.
+    rate_limit_enabled: bool = True
+    rate_limit_query_per_minute: int = 20  # per user
+    rate_limit_query_tenant_per_minute: int = 200  # per organization
+    rate_limit_analysis_per_minute: int = 10  # per user, /contracts/*
+    rate_limit_upload_per_minute: int = 30  # per user
+    # Failed logins per (IP, email) and per IP, in LOGIN_WINDOW_S. Behind a
+    # load balancer, run uvicorn with --proxy-headers so the IP is the client's.
+    login_max_failures: int = 10
+    login_max_failures_per_ip: int = 100
+    login_window_s: int = 15 * 60
 
     # --- Agent (Phase 8) ---
     # "agent" = LangGraph workflow (rewrite, decompose, retry); "fast" = the

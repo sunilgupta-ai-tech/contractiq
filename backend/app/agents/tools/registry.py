@@ -25,6 +25,7 @@ from typing import Any
 
 from app.core.logging import get_logger
 from app.core.security import Permission, Role, has_permission
+from app.guardrails.tool_guardrails import check_arguments
 
 logger = get_logger(__name__)
 
@@ -81,6 +82,9 @@ class ToolRegistry:
             raise ToolError(f"Tool arguments may not set {sorted(forbidden)}")
         if not has_permission(role, tool.permission):
             raise ToolError(f"Role {role.value} may not use '{name}'")
+        if problem := check_arguments(name, arguments):  # Phase 11 argument limits
+            logger.warning("tool_arguments_refused", extra={"tool": name, "problem": problem})
+            raise ToolError(f"Refused '{name}': {problem}")
         if calls_so_far >= self.max_calls:
             raise ToolError(f"Tool-call budget of {self.max_calls} exhausted")
         return await tool.func(tenant_id=tenant_id, **arguments)

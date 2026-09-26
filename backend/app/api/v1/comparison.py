@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.core.dependencies import AnalystDep, ComparisonServiceDep
+from app.core.dependencies import AnalysisRateLimitDep, AnalystDep, ComparisonServiceDep
 from app.schemas.analysis import CompareRequest, CompareResponse
 from app.schemas.common import ApiResponse
 
@@ -21,7 +21,7 @@ router = APIRouter(tags=["contracts"])
     response_model=ApiResponse[CompareResponse],
 )
 async def post_contracts_compare(
-    _: AnalystDep, body: CompareRequest, service: ComparisonServiceDep
+    _: AnalystDep, _limit: AnalysisRateLimitDep, body: CompareRequest, service: ComparisonServiceDep
 ) -> ApiResponse[CompareResponse]:
     """Clauses aligned by topic (so renumbering doesn't matter), each row
     `same`, `changed` (with the changed facts) or `missing`, and the risk a

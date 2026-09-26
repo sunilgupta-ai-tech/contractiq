@@ -222,4 +222,5 @@ class AgentRunner:
             queries=final.get("queries", []),
             retries=final.get("retry_count", 0),
             tool_calls=final.get("tool_calls", 0),
+            grounding=final.get("grounding"),
         )

@@ -56,10 +56,12 @@ class AppError(Exception):
         *,
         details: dict[str, Any] | None = None,
         internal_detail: str | None = None,
+        headers: dict[str, str] | None = None,  # e.g. Retry-After on 429
     ) -> None:
         self.message = message or self.message
         self.details = details
         self.internal_detail = internal_detail
+        self.headers = headers
         super().__init__(self.message)
 
 
@@ -141,7 +143,9 @@ async def _app_error_handler(_: Request, exc: Exception) -> JSONResponse:
     log = logger.error if exc.status_code >= 500 and exc.status_code != 501 else logger.info
     log("app_error", extra={"code": exc.code, "internal_detail": exc.internal_detail})
     return JSONResponse(
-        status_code=exc.status_code, content=_envelope(exc.code, exc.message, exc.details)
+        status_code=exc.status_code,
+        content=_envelope(exc.code, exc.message, exc.details),
+        headers=exc.headers,
     )
 
 

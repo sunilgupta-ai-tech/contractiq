@@ -40,6 +40,7 @@ from app.db.repositories.document_repository import (
     DocumentRepository,
     DocumentVersionRepository,
 )
+from app.guardrails.evidence_validator import UNVERIFIED_MESSAGE, should_withhold
 from app.llm.base import EmbeddingConfigError, EmbeddingError, LLMConfigError, LLMError
 from app.rag.pipelines.qa import QAPipeline, RagAnswer
 from app.schemas.query import (
@@ -48,6 +49,7 @@ from app.schemas.query import (
     QueryRequest,
     QueryResponse,
     StepOut,
+    UnsupportedClaimOut,
     UsageOut,
 )
 from app.services.reranking_service import reranker_for
@@ -106,7 +108,7 @@ class QueryService:
             conversation.id, self.resources.settings.conversation_history_turns
         )
 
-        result = await self._run_pipeline(request, history)
+        result = self._apply_grounding_policy(await self._run_pipeline(request, history))
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         self.session.add(
@@ -159,6 +161,24 @@ class QueryService:
             )
         )
         return conversation
+
+    def _apply_grounding_policy(self, result: RagAnswer) -> RagAnswer:
+        """Phase 11: log weakly grounded answers; under GROUNDING_MODE=enforce,
+        withhold them (the cited passages stay listed for the user to check)."""
+        report = result.grounding
+        if report is not None and report.unsupported:
+            logger.warning(
+                "answer_claims_unsupported",
+                extra={"score": report.score, "reasons": [c.reason for c in report.unsupported]},
+            )
+        settings = self.resources.settings
+        if should_withhold(
+            report, mode=settings.grounding_mode, min_score=settings.grounding_min_score
+        ):
+            result.answer = UNVERIFIED_MESSAGE
+            result.insufficient_evidence = True
+            result.cited_fraction = 0.0
+        return result
 
     def _mode(self, request: QueryRequest) -> str:
         return request.mode or ("fast" if self.resources.settings.query_mode == "fast" else "agent")
@@ -247,4 +267,9 @@ def _response(
         ),
         mode="agent" if mode == "agent" else "fast",
         agent=agent,
+        groundedness=result.grounding.score if result.grounding else None,
+        unsupported_claims=[
+            UnsupportedClaimOut(sentence=c.sentence, reason=c.reason or "unsupported")
+            for c in (result.grounding.unsupported if result.grounding else [])
+        ],
     )

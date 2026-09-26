@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 
 from app.core.config import Settings
 from app.core.logging import get_logger
+from app.guardrails.evidence_validator import GroundingReport
 from app.guardrails.prompt_injection import scan_for_injection
 from app.llm.base import (
     ChatMessage,
@@ -84,6 +85,9 @@ class RagAnswer:
     # Suspicious instruction-like text seen in the question or evidence.
     # Logged and returned for review; never blocks (see guardrails).
     injection_flags: list[str] = field(default_factory=list)
+    # Groundedness of the answer's claims (Phase 11); None when no answer
+    # was generated (not found / blocked).
+    grounding: GroundingReport | None = None
 
 
 class QAPipeline:
@@ -171,6 +175,7 @@ class QAPipeline:
             )
             return answer
         cited = resolve_citations(result.text, blocks)
+        flags += cited.output_flags
         steps.append(
             _step("cite", "Verify citations", f"{len(cited.citations)} citations", started)
         )
@@ -187,6 +192,7 @@ class QAPipeline:
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             injection_flags=flags,
+            grounding=cited.grounding,
         )
 
     async def _generate(

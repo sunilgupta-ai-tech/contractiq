@@ -27,6 +27,8 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | POST | `/contracts/risk-analysis` | 10 | live — `{document_ids?}` or `{version_id}`; rule-based findings with evidence, most severe first; un-analysed documents are queued (`pending_document_ids`). Advisory |
 | POST | `/contracts/portfolio-summary` | 10 | live — `{document_ids?}`; per-contract key terms and risk, upcoming dates across the portfolio |
 
+Rate limits (Phase 11, [guardrails.md](guardrails.md)): `/query`, `/contracts/*`, `/documents/upload` and failed `/auth/login` attempts return 429 `RATE_LIMITED` with `Retry-After` when exceeded. `/query` responses include `groundedness` and `unsupported_claims`.
+
 `/contracts/*` needs `analysis:run` (ADMIN, LEGAL_MANAGER, ANALYST). A document that has not finished processing returns 409; ids from another organisation return 404.
 
 Every response carries `X-Request-ID`; send your own to correlate with upstream logs.

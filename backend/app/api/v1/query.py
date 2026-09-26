@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.core.dependencies import QueryRunnerDep, QueryServiceDep
+from app.core.dependencies import QueryRateLimitDep, QueryRunnerDep, QueryServiceDep
 from app.schemas.common import ApiResponse
 from app.schemas.query import QueryRequest, QueryResponse
 
@@ -24,7 +24,7 @@ router = APIRouter(tags=["query"])
     response_model=ApiResponse[QueryResponse],
 )
 async def ask(
-    _: QueryRunnerDep, body: QueryRequest, service: QueryServiceDep
+    _: QueryRunnerDep, _limit: QueryRateLimitDep, body: QueryRequest, service: QueryServiceDep
 ) -> ApiResponse[QueryResponse]:
     """Answer from the organization's contracts, citing page, section and clause.
 

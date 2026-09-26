@@ -20,8 +20,10 @@ proper evidence check).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from app.guardrails.evidence_validator import GroundingReport, check_grounding
+from app.guardrails.output_guardrails import sanitize_output
 from app.rag.types import Citation, EvidenceBlock
 
 # "[3]", "[1, 4]", "[2][5]" (the last is two markers)
@@ -35,9 +37,14 @@ class CitedAnswer:
     text: str
     citations: list[Citation]
     cited_fraction: float
+    # Does each sentence say what its cited evidence says? (Phase 11)
+    grounding: GroundingReport | None = None
+    # What output sanitising removed (Phase 11), e.g. "output:delimiter_echo".
+    output_flags: list[str] = field(default_factory=list)
 
 
 def resolve_citations(answer: str, blocks: list[EvidenceBlock]) -> CitedAnswer:
+    answer, output_flags = sanitize_output(answer)
     by_number = {b.number: b for b in blocks}
     renumber: dict[int, int] = {}  # model's block number -> displayed index
 
@@ -58,7 +65,13 @@ def resolve_citations(answer: str, blocks: list[EvidenceBlock]) -> CitedAnswer:
         _citation(index, by_number[number])
         for number, index in sorted(renumber.items(), key=lambda item: item[1])
     ]
-    return CitedAnswer(text=text, citations=citations, cited_fraction=_cited_fraction(text))
+    return CitedAnswer(
+        text=text,
+        citations=citations,
+        cited_fraction=_cited_fraction(text),
+        grounding=check_grounding(answer, blocks),
+        output_flags=output_flags,
+    )
 
 
 def _citation(index: int, block: EvidenceBlock) -> Citation:

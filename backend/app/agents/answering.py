@@ -103,6 +103,8 @@ async def cite(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
         "answer": cited.text,
         "citations": cited.citations,
         "cited_fraction": cited.cited_fraction,
+        "grounding": cited.grounding,
+        "flags": cited.output_flags,
         "insufficient_evidence": False,
         "steps": [_step("cite", "Verify citations", f"{len(cited.citations)} citations", started)],
     }

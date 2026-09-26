@@ -5,9 +5,22 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, BeforeValidator, Field, StringConstraints
 
-Question = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=2000)]
+from app.guardrails.input_guardrails import clean_text
+
+
+def _clean(value: object) -> object:
+    return clean_text(value) if isinstance(value, str) else value
+
+
+# Invisible/control characters are removed (Phase 11) *before* the length
+# checks, so a question of only zero-width characters is rejected as empty.
+Question = Annotated[
+    str,
+    BeforeValidator(_clean),
+    StringConstraints(strip_whitespace=True, min_length=3, max_length=2000),
+]
 
 
 class QueryRequest(BaseModel):
@@ -75,6 +88,11 @@ class AgentInfo(BaseModel):
     tool_calls: int
 
 
+class UnsupportedClaimOut(BaseModel):
+    sentence: str
+    reason: str = Field(description='e.g. "uncited", "number 90 not in evidence".')
+
+
 class QueryResponse(BaseModel):
     id: uuid.UUID = Field(description="The assistant message id.")
     conversation_id: uuid.UUID
@@ -94,3 +112,11 @@ class QueryResponse(BaseModel):
     usage: UsageOut
     mode: Literal["agent", "fast"]
     agent: AgentInfo | None = None
+    groundedness: float | None = Field(
+        default=None,
+        description="Share of answer claims supported by their cited evidence (0-1); "
+        "null when no answer was generated.",
+    )
+    unsupported_claims: list[UnsupportedClaimOut] = Field(
+        default_factory=list, description="Answer sentences the evidence check could not verify."
+    )

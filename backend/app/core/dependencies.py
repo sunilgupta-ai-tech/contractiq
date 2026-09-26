@@ -8,7 +8,7 @@ by importing globals. Tests swap any of these via `app.dependency_overrides`.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -21,6 +21,12 @@ from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.logging import tenant_id_ctx
 from app.core.resources import Resources
 from app.core.security import Permission, Role, decode_token, has_permission
+from app.guardrails.input_guardrails import (
+    RateLimiter,
+    limits_for,
+    login_limits,
+    subject_hash,
+)
 from app.services.audit_service import RequestMeta
 from app.services.auth_service import AuthService
 from app.services.comparison_service import ComparisonService
@@ -86,6 +92,69 @@ def require_permission(permission: Permission) -> Callable[..., CurrentUser]:
         return user
 
     return _checker
+
+
+def get_rate_limiter(request: Request) -> RateLimiter:
+    """Redis-backed limiter; disabled when the app runs without infrastructure
+    (unit tests that don't start the lifespan)."""
+    resources: Resources | None = getattr(request.app.state, "resources", None)
+    if resources is None:
+        return RateLimiter(None)
+    return RateLimiter(resources.redis, enabled=resources.settings.rate_limit_enabled)
+
+
+def rate_limit(kind: str) -> Callable[..., Awaitable[None]]:
+    """Per-user (and per-tenant) request limits for costly endpoints (Phase 11).
+    Declare it *after* the permission dependency, so a request that will be
+    refused anyway does not use up the caller's allowance."""
+
+    async def _check(
+        request: Request,
+        user: Annotated[CurrentUser, Depends(get_current_user)],
+        limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+    ) -> None:
+        resources: Resources | None = getattr(request.app.state, "resources", None)
+        if resources is None or not limiter.enabled:
+            return
+        for limit, per_tenant in limits_for(kind, settings=resources.settings):
+            subject = "tenant" if per_tenant else str(user.user_id)
+            await limiter.hit(limit, subject, tenant_id=str(user.tenant_id))
+
+    return _check
+
+
+@dataclass
+class LoginThrottle:
+    """Failed-login limits per (IP, email) and per IP (Phase 11). Only failures
+    count, so a user who signs in correctly is never slowed down."""
+
+    limiter: RateLimiter
+    settings: Settings
+    ip: str
+
+    async def check(self, email: str) -> None:
+        pair, per_ip = login_limits(self.settings)
+        await self.limiter.check(pair, subject_hash(self.ip, email))
+        await self.limiter.check(per_ip, subject_hash(self.ip))
+
+    async def failed(self, email: str) -> None:
+        pair, per_ip = login_limits(self.settings)
+        await self.limiter.record(pair, subject_hash(self.ip, email))
+        await self.limiter.record(per_ip, subject_hash(self.ip))
+
+    async def succeeded(self, email: str) -> None:
+        pair, _ = login_limits(self.settings)
+        await self.limiter.reset(pair, subject_hash(self.ip, email))
+
+
+def get_login_throttle(
+    request: Request,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> LoginThrottle:
+    resources: Resources | None = getattr(request.app.state, "resources", None)
+    ip = request.client.host if request.client else "unknown"
+    return LoginThrottle(limiter, resources.settings if resources else settings, ip)
 
 
 def get_request_meta(request: Request) -> RequestMeta:
@@ -174,3 +243,7 @@ AnalystDep = Annotated[CurrentUser, Depends(require_permission(Permission.ANALYS
 ContractServiceDep = Annotated[ContractService, Depends(get_contract_service)]
 RiskServiceDep = Annotated[RiskService, Depends(get_risk_service)]
 ComparisonServiceDep = Annotated[ComparisonService, Depends(get_comparison_service)]
+QueryRateLimitDep = Annotated[None, Depends(rate_limit("query"))]
+AnalysisRateLimitDep = Annotated[None, Depends(rate_limit("analysis"))]
+UploadRateLimitDep = Annotated[None, Depends(rate_limit("upload"))]
+LoginThrottleDep = Annotated[LoginThrottle, Depends(get_login_throttle)]

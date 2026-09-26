@@ -87,6 +87,6 @@ Ollama is supported for generation as well: `LLM_PROVIDER=ollama`, `OLLAMA_MODEL
 ## Known limits (next phases)
 
 * In fast mode, follow-ups use conversation history for the answer but retrieval uses only the new question; agent mode (default) rewrites follow-ups before searching.
-* `cited_fraction` is a citation-coverage signal, not a groundedness check; claim-level evidence validation is Phase 11. Evaluation of retrieval/answer quality (Recall@K, MRR, faithfulness) is Phase 12.
+* `cited_fraction` is a citation-coverage signal, not a groundedness check; claim-level evidence validation (`groundedness`, `unsupported_claims`) was added in Phase 11 — see [guardrails.md](guardrails.md). Evaluation of retrieval/answer quality (Recall@K, MRR, faithfulness) is Phase 12.
 * Answers are returned whole (no token streaming yet).
 * The heuristic reranker is not a neural cross-encoder; see `app/rag/reranker.py` for why and how to plug one in.

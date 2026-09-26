@@ -21,6 +21,7 @@ from app.core.dependencies import (
     DocumentUploaderDep,
     RequestMetaDep,
     SettingsDep,
+    UploadRateLimitDep,
 )
 from app.db.models import ContractType, DocumentStatus
 from app.schemas.common import ApiResponse, Page
@@ -43,6 +44,7 @@ router = APIRouter(tags=["documents"])
 )
 async def upload_document(
     user: DocumentUploaderDep,
+    _limit: UploadRateLimitDep,
     service: DocumentServiceDep,
     settings: SettingsDep,
     meta: RequestMetaDep,

@@ -36,4 +36,17 @@ Implemented in Phase 4:
 * Password-protected and corrupt PDFs are rejected with a fixed user-facing message; exception text from parsers is logged, never shown to users.
 * Derived files (parsed.json, images) are stored under the same tenant-prefixed path as the original and are removed with it.
 
-Planned: rate limiting, including login throttling (Redis, Phase 11); AV scanning of uploads; tool authorization in the agent registry; output/citation validation (Phase 11); httpOnly-cookie sessions via a frontend BFF route (the frontend still holds the access token in memory).
+Implemented in Phase 8:
+
+* Agent tools are reached only through a registry that checks each tool's permission against the caller's role, injects `tenant_id` itself (arguments may not set it), and enforces a per-question call budget, retry and step limits, and an overall timeout.
+
+Implemented in Phase 11 (details in [guardrails.md](guardrails.md)):
+
+* Rate limits in Redis: `/query` per user and per organisation, `/contracts/*` and uploads per user. Returns 429 with `Retry-After`; checked after authorization, so refused requests don't consume allowances. Fails open (logged) if Redis is down.
+* Login throttling on *failed* attempts per (IP, email) and per IP. Keys hold hashes, never email addresses.
+* Questions are Unicode-normalised and stripped of zero-width, bidi-override and control characters (hidden-instruction smuggling).
+* Model output is sanitised before users see it: echoed delimiter/system tags removed, secret-like tokens (API keys, JWT/bearer tokens, private keys) redacted, length capped.
+* Groundedness check on every answer (numbers must appear in the cited evidence; key terms must overlap). Reported as `groundedness` / `unsupported_claims`; `GROUNDING_MODE=enforce` withholds unverifiable answers.
+* Agent tool arguments are validated (size and type limits, no unknown arguments) before any tool runs.
+
+Planned: AV scanning of uploads; httpOnly-cookie sessions via a frontend BFF route (the frontend still holds the access token in memory).

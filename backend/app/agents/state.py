@@ -18,6 +18,7 @@ import operator
 from typing import Annotated, Literal, TypedDict
 
 from app.core.security import Role
+from app.guardrails.evidence_validator import GroundingReport
 from app.llm.base import LLMResult
 from app.rag.pipelines.qa import Step
 from app.rag.types import Citation, EvidenceBlock, RetrievedChunk
@@ -56,6 +57,7 @@ class AgentState(TypedDict, total=False):
     citations: list[Citation]
     cited_fraction: float
     insufficient_evidence: bool
+    grounding: GroundingReport | None
 
     # --- accumulated across nodes ---
     steps: Annotated[list[Step], operator.add]

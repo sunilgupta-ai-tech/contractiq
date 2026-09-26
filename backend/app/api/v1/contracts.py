@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.core.dependencies import AnalystDep, ContractServiceDep
+from app.core.dependencies import AnalysisRateLimitDep, AnalystDep, ContractServiceDep
 from app.schemas.analysis import DocumentAnalysisRequest, ExtractClausesResponse, SummaryResponse
 from app.schemas.common import ApiResponse
 
@@ -23,7 +23,10 @@ router = APIRouter(tags=["contracts"])
     response_model=ApiResponse[SummaryResponse],
 )
 async def post_contracts_summarize(
-    _: AnalystDep, body: DocumentAnalysisRequest, service: ContractServiceDep
+    _: AnalystDep,
+    _limit: AnalysisRateLimitDep,
+    body: DocumentAnalysisRequest,
+    service: ContractServiceDep,
 ) -> ApiResponse[SummaryResponse]:
     """Overview with [n] citations, obligations, key terms and dates (including
     the computed non-renewal notice deadline) and risk counts. Cached per
@@ -37,7 +40,10 @@ async def post_contracts_summarize(
     response_model=ApiResponse[ExtractClausesResponse],
 )
 async def post_contracts_extract_clauses(
-    _: AnalystDep, body: DocumentAnalysisRequest, service: ContractServiceDep
+    _: AnalystDep,
+    _limit: AnalysisRateLimitDep,
+    body: DocumentAnalysisRequest,
+    service: ContractServiceDep,
 ) -> ApiResponse[ExtractClausesResponse]:
     """One entry per standard topic: found or not, a verified quote, typed
     facts (e.g. notice days) and where it is. Cached per version."""
