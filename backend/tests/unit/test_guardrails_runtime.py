@@ -407,3 +407,14 @@ def test_time_is_used_for_fixed_windows():
     limit = Limit("x", 1, 60)
     key_now, _ = RateLimiter._key(limit, "u", "t")
     assert key_now.endswith(f":{int(time.time()) // 60}")
+
+
+def test_markers_after_the_full_stop_stay_with_their_sentence():
+    # Found by the Phase 12 evaluation: "…notice. [1] Next…" used to credit
+    # [1] to the next sentence and mark the cited one "uncited".
+    report = check_grounding(
+        "Either party may terminate on 60 days' written notice. [1] "
+        "Liability is capped at the fees paid in the preceding 12 months.[2]",
+        BLOCKS,
+    )
+    assert report.score == 1.0 and [c.cited for c in report.claims] == [[1], [2]]

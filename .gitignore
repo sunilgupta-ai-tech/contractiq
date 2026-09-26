@@ -35,3 +35,6 @@ workers/.run/
 .DS_Store
 .idea/
 .vscode/
+
+# Evaluation output (the committed baseline lives in backend/eval/baseline/)
+eval-reports/

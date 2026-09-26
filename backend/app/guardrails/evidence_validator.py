@@ -46,6 +46,7 @@ MIN_CLAIM_WORDS = 4
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
 _MARKER = re.compile(r"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]")
+_TRAILING_MARKERS = re.compile(r"([.!?])\s*((?:\[\d{1,3}(?:\s*,\s*\d{1,3})*\]\s*)+)")
 _NUMBER = re.compile(r"\d[\d,.]*\d|\d")
 _WORD = re.compile(r"[a-z][a-z'-]{3,}")
 _STOPWORDS = frozenset(
@@ -103,7 +104,12 @@ def check_grounding(answer: str, blocks: list[EvidenceBlock]) -> GroundingReport
     """Check `answer` (with the model's own [n] numbering) against `blocks`."""
     by_number = {b.number: b for b in blocks}
     claims: list[ClaimCheck] = []
-    for sentence in _SENTENCE.split(answer.strip()):
+    # "…notice. [1]" -> "…notice [1]." so a marker written after the full stop
+    # stays with the sentence it cites instead of the next one.
+    answer = _TRAILING_MARKERS.sub(
+        lambda m: f" {''.join(m.group(2).split())}{m.group(1)} ", answer.strip()
+    ).strip()
+    for sentence in _SENTENCE.split(answer):
         text = _MARKER.sub("", sentence).strip()
         words = _content_words(text)
         numbers = _numbers(text)

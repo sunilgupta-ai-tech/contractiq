@@ -1,0 +1,54 @@
+name: Evaluation
+
+# Real-model evaluation of the RAG pipeline on the golden dataset (Phase 12).
+# Separate from CI because it needs a model API key and costs money; pull
+# requests are already covered by the fake-model evaluation test in CI.
+# Fails when a gated metric regresses against backend/eval/baseline/report.json
+# (skipped until a baseline has been committed; see docs/evaluation.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "fast or agent"
+        default: fast
+  schedule:
+    - cron: "0 3 * * *"  # nightly
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+      qdrant:
+        image: qdrant/qdrant:v1.12.4
+        ports: ["6333:6333"]
+    env:
+      REDIS_URL: redis://localhost:6379/0
+      QDRANT_URL: http://localhost:6333
+      LLM_PROVIDER: gemini
+      EMBEDDING_PROVIDER: gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GIT_SHA: ${{ github.sha }}
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: Check the API key is configured
+        run: test -n "$GEMINI_API_KEY" || { echo "Set the GEMINI_API_KEY secret"; exit 1; }
+      - name: Evaluate
+        run: |
+          BASELINE=""
+          if [ -f eval/baseline/report.json ]; then BASELINE="--baseline eval/baseline/report.json"; fi
+          python -m app.evaluation run --mode "${{ inputs.mode || 'fast' }}" --out eval-reports $BASELINE
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-report
+          path: backend/eval-reports/
+      - if: always()
+        run: cat eval-reports/report.md >> "$GITHUB_STEP_SUMMARY"

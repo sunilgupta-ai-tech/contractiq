@@ -1,0 +1,474 @@
+{
+  "name": "sample-msa",
+  "version": 1,
+  "description": "Built-in golden set over a synthetic Northwind/Contoso MSA (app/evaluation/sample_contract.py): dates, renewal, service levels, payment, a fee table, data protection, termination, liability, indemnity, disputes, plus unanswerable questions that must get a 'not found' reply.",
+  "documents": {
+    "msa": {
+      "title": "Northwind - Contoso MSA",
+      "contract_type": "MSA",
+      "builder": "sample_msa"
+    }
+  },
+  "examples": [
+    {
+      "id": "parties",
+      "document": "msa",
+      "question": "Who are the parties to the agreement?",
+      "answerable": true,
+      "expected_answer": "Northwind Traders Limited (Customer) and Contoso Cloud Services Private Limited (Supplier).",
+      "facts": [
+        "Northwind",
+        "Contoso"
+      ],
+      "evidence": [
+        {
+          "text": "Northwind Traders Limited"
+        }
+      ],
+      "tags": [
+        "parties"
+      ]
+    },
+    {
+      "id": "effective-date",
+      "document": "msa",
+      "question": "When does the agreement start?",
+      "answerable": true,
+      "expected_answer": "On 1 April 2025, the Effective Date.",
+      "facts": [
+        "1 April 2025|April 1, 2025|2025-04-01"
+      ],
+      "evidence": [
+        {
+          "clause": "2.1"
+        }
+      ],
+      "tags": [
+        "dates"
+      ]
+    },
+    {
+      "id": "initial-term",
+      "document": "msa",
+      "question": "How long is the initial term?",
+      "answerable": true,
+      "expected_answer": "Thirty-six (36) months.",
+      "facts": [
+        "36|thirty-six"
+      ],
+      "evidence": [
+        {
+          "clause": "2.1"
+        }
+      ],
+      "tags": [
+        "dates"
+      ]
+    },
+    {
+      "id": "auto-renewal",
+      "document": "msa",
+      "question": "Does the agreement renew automatically, and for how long?",
+      "answerable": true,
+      "expected_answer": "Yes, for successive twelve (12) month periods.",
+      "facts": [
+        "12|twelve"
+      ],
+      "evidence": [
+        {
+          "clause": "3.1"
+        }
+      ],
+      "tags": [
+        "renewal"
+      ]
+    },
+    {
+      "id": "renewal-notice",
+      "document": "msa",
+      "question": "How much notice is needed to stop the agreement from renewing?",
+      "answerable": true,
+      "expected_answer": "Written notice of non-renewal at least ninety (90) days before the end of the term.",
+      "facts": [
+        "90|ninety"
+      ],
+      "evidence": [
+        {
+          "clause": "3.1"
+        }
+      ],
+      "tags": [
+        "renewal",
+        "dates"
+      ]
+    },
+    {
+      "id": "uptime",
+      "document": "msa",
+      "question": "What availability does the supplier commit to?",
+      "answerable": true,
+      "expected_answer": "99.9% in each calendar month, excluding notified scheduled maintenance.",
+      "facts": [
+        "99.9"
+      ],
+      "evidence": [
+        {
+          "clause": "4.1"
+        }
+      ],
+      "tags": [
+        "service-levels"
+      ]
+    },
+    {
+      "id": "service-credit",
+      "document": "msa",
+      "question": "What service credits apply if availability falls short?",
+      "answerable": true,
+      "expected_answer": "5% of the monthly Fees per full 0.1% shortfall, capped at 25% of the monthly Fees.",
+      "facts": [
+        "5%",
+        "25%"
+      ],
+      "evidence": [
+        {
+          "clause": "4.2"
+        }
+      ],
+      "tags": [
+        "service-levels",
+        "money"
+      ]
+    },
+    {
+      "id": "payment-days",
+      "document": "msa",
+      "question": "Within how many days must invoices be paid?",
+      "answerable": true,
+      "expected_answer": "Within forty-five (45) days of receipt.",
+      "facts": [
+        "45|forty-five"
+      ],
+      "evidence": [
+        {
+          "clause": "5.1"
+        }
+      ],
+      "tags": [
+        "payment"
+      ]
+    },
+    {
+      "id": "late-interest",
+      "document": "msa",
+      "question": "What interest is charged on late payments?",
+      "answerable": true,
+      "expected_answer": "1.5% per month from the due date.",
+      "facts": [
+        "1.5%"
+      ],
+      "evidence": [
+        {
+          "clause": "5.2"
+        }
+      ],
+      "tags": [
+        "payment",
+        "money"
+      ]
+    },
+    {
+      "id": "price-increase",
+      "document": "msa",
+      "question": "Can the supplier increase the fees, and by how much?",
+      "answerable": true,
+      "expected_answer": "Once per contract year on 60 days' notice, by at most 5%.",
+      "facts": [
+        "60|sixty",
+        "5%"
+      ],
+      "evidence": [
+        {
+          "clause": "5.3"
+        }
+      ],
+      "tags": [
+        "payment",
+        "money"
+      ]
+    },
+    {
+      "id": "go-live-fee",
+      "document": "msa",
+      "question": "What is the fee for the go-live milestone?",
+      "answerable": true,
+      "expected_answer": "INR 3,000,000, due in Month 6.",
+      "facts": [
+        "3,000,000|3000000|30 lakh|3 million"
+      ],
+      "evidence": [
+        {
+          "text": "Go-live"
+        }
+      ],
+      "tags": [
+        "payment",
+        "table"
+      ]
+    },
+    {
+      "id": "confidentiality-period",
+      "document": "msa",
+      "question": "How long do the confidentiality obligations last?",
+      "answerable": true,
+      "expected_answer": "Five (5) years after termination.",
+      "facts": [
+        "5 years|five years|five (5) years"
+      ],
+      "evidence": [
+        {
+          "clause": "6.1"
+        }
+      ],
+      "tags": [
+        "confidentiality"
+      ]
+    },
+    {
+      "id": "breach-notice",
+      "document": "msa",
+      "question": "How quickly must the supplier report a personal data breach?",
+      "answerable": true,
+      "expected_answer": "Within forty-eight (48) hours of becoming aware of it.",
+      "facts": [
+        "48|forty-eight"
+      ],
+      "evidence": [
+        {
+          "clause": "7.3"
+        }
+      ],
+      "tags": [
+        "data-protection"
+      ]
+    },
+    {
+      "id": "subprocessors",
+      "document": "msa",
+      "question": "Can the customer object to new sub-processors?",
+      "answerable": true,
+      "expected_answer": "Yes; the supplier gives 30 days' notice, during which the customer may object on reasonable data protection grounds.",
+      "facts": [
+        "30|thirty",
+        "object"
+      ],
+      "evidence": [
+        {
+          "clause": "7.2"
+        }
+      ],
+      "tags": [
+        "data-protection"
+      ]
+    },
+    {
+      "id": "cure-period",
+      "document": "msa",
+      "question": "What is the cure period for a material breach?",
+      "answerable": true,
+      "expected_answer": "Thirty (30) days after being notified.",
+      "facts": [
+        "30|thirty"
+      ],
+      "evidence": [
+        {
+          "clause": "8.1"
+        }
+      ],
+      "tags": [
+        "termination"
+      ]
+    },
+    {
+      "id": "termination-convenience",
+      "document": "msa",
+      "question": "Can the customer terminate for convenience, and with how much notice?",
+      "answerable": true,
+      "expected_answer": "Yes, on one hundred and twenty (120) days' written notice.",
+      "facts": [
+        "120|one hundred and twenty"
+      ],
+      "evidence": [
+        {
+          "clause": "8.2"
+        }
+      ],
+      "tags": [
+        "termination"
+      ]
+    },
+    {
+      "id": "data-return",
+      "document": "msa",
+      "question": "How soon must customer data be returned after termination?",
+      "answerable": true,
+      "expected_answer": "Within fifteen (15) days of termination.",
+      "facts": [
+        "15|fifteen"
+      ],
+      "evidence": [
+        {
+          "clause": "8.3"
+        }
+      ],
+      "tags": [
+        "termination",
+        "data-protection"
+      ]
+    },
+    {
+      "id": "liability-cap",
+      "document": "msa",
+      "question": "What is the cap on each party's liability?",
+      "answerable": true,
+      "expected_answer": "The Fees paid in the twelve (12) months preceding the event giving rise to the claim.",
+      "facts": [
+        "12|twelve"
+      ],
+      "evidence": [
+        {
+          "clause": "9.2"
+        }
+      ],
+      "tags": [
+        "liability"
+      ]
+    },
+    {
+      "id": "consequential-loss",
+      "document": "msa",
+      "question": "Is liability for consequential loss excluded?",
+      "answerable": true,
+      "expected_answer": "Yes; neither party is liable for indirect or consequential loss.",
+      "facts": [
+        "consequential"
+      ],
+      "evidence": [
+        {
+          "clause": "9.1"
+        }
+      ],
+      "tags": [
+        "liability"
+      ]
+    },
+    {
+      "id": "indemnity",
+      "document": "msa",
+      "question": "What does the supplier indemnify the customer against?",
+      "answerable": true,
+      "expected_answer": "Losses from third-party claims that the Services infringe intellectual property rights.",
+      "facts": [
+        "intellectual property"
+      ],
+      "evidence": [
+        {
+          "clause": "10.1"
+        }
+      ],
+      "tags": [
+        "indemnity"
+      ]
+    },
+    {
+      "id": "governing-law",
+      "document": "msa",
+      "question": "Which law governs the agreement?",
+      "answerable": true,
+      "expected_answer": "The laws of India.",
+      "facts": [
+        "India"
+      ],
+      "evidence": [
+        {
+          "clause": "11.1"
+        }
+      ],
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "id": "arbitration-seat",
+      "document": "msa",
+      "question": "Where are disputes arbitrated?",
+      "answerable": true,
+      "expected_answer": "In Mumbai, before a sole arbitrator under the Arbitration and Conciliation Act, 1996.",
+      "facts": [
+        "Mumbai"
+      ],
+      "evidence": [
+        {
+          "clause": "11.2"
+        }
+      ],
+      "tags": [
+        "disputes"
+      ]
+    },
+    {
+      "id": "assignment",
+      "document": "msa",
+      "question": "Can either party assign the agreement?",
+      "answerable": true,
+      "expected_answer": "Only with the prior written consent of the other party.",
+      "facts": [
+        "consent"
+      ],
+      "evidence": [
+        {
+          "clause": "12.1"
+        }
+      ],
+      "tags": [
+        "general"
+      ]
+    },
+    {
+      "id": "insurance",
+      "document": "msa",
+      "question": "What insurance must the supplier maintain?",
+      "answerable": false,
+      "tags": [
+        "unanswerable"
+      ]
+    },
+    {
+      "id": "non-solicit",
+      "document": "msa",
+      "question": "Is there a non-solicitation clause for employees?",
+      "answerable": false,
+      "tags": [
+        "unanswerable"
+      ]
+    },
+    {
+      "id": "per-user-price",
+      "document": "msa",
+      "question": "What is the price per user licence?",
+      "answerable": false,
+      "tags": [
+        "unanswerable"
+      ]
+    },
+    {
+      "id": "audit-rights",
+      "document": "msa",
+      "question": "How often may the customer audit the supplier's facilities?",
+      "answerable": false,
+      "tags": [
+        "unanswerable"
+      ]
+    }
+  ]
+}

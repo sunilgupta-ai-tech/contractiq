@@ -46,8 +46,15 @@ frontend-dev: ## Run the Next.js dev server
 test: ## Run backend tests
 	cd backend && pytest -q
 
+eval: ## Evaluate the RAG pipeline on the golden dataset (uses the configured models)
+	docker compose exec backend python -m app.evaluation run --out /tmp/eval-reports
+
+eval-baseline: ## Store this run as the regression baseline (backend/eval/baseline)
+	docker compose exec backend python -m app.evaluation run --out /tmp/eval-reports
+	docker compose cp backend:/tmp/eval-reports/report.json backend/eval/baseline/report.json
+
 lint: ## Lint backend and frontend
 	cd backend && ruff check app tests
 	cd frontend && npm run lint
 
-.PHONY: help env up down logs ps infra migrate migration backend-dev worker-dev frontend-dev test lint
+.PHONY: help env up down logs ps infra migrate migration backend-dev worker-dev frontend-dev test eval eval-baseline lint
