@@ -66,7 +66,7 @@ export function RiskView() {
                 <Link href={`/documents/${f.documentId}`} className="block text-[12.5px] text-ink-2 hover:text-brand">
                   {f.documentTitle}
                 </Link>
-                <p className="font-mono text-2xs text-ink-3">§{f.clause} · p.{f.page}</p>
+                <p className="font-mono text-2xs text-ink-3">{f.missing ? "Not in contract" : `§${f.clause} · p.${f.page}`}</p>
               </div>
               <div className="space-y-2.5">
                 <blockquote className="border-l-2 border-[#E3C766] pl-3 font-serif text-[14.5px] leading-6 text-ink">

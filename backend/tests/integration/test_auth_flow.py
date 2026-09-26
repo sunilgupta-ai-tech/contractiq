@@ -133,3 +133,10 @@ async def test_auth_events_are_audited(api, cleanup):
         ).scalars()
         assert list(actions) == ["auth.register", "auth.login_failed", "auth.login"]
     await db.dispose()
+
+
+def test_me_includes_the_organization(api, cleanup):
+    tokens, _ = register(api, cleanup, "Profile Org")
+    me = api.get("/api/v1/users/me", headers=auth(tokens)).json()["data"]
+    assert me["organization_name"] == "Profile Org" and me["member_count"] == 1
+    assert me["role"] == "ADMIN" and "password_hash" not in me

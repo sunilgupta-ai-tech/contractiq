@@ -16,10 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, ForbiddenError
 from app.core.security import hash_password
-from app.db.models import User
+from app.db.models import Organization, User
 from app.db.repositories.user_repository import UserRepository, find_user_by_email
 from app.schemas.common import Page
-from app.schemas.user import CreateUserRequest, UpdateUserRequest, UserOut
+from app.schemas.user import CreateUserRequest, MeOut, UpdateUserRequest, UserOut
 from app.services.audit_service import RequestMeta, record_audit
 from app.services.auth_service import EMAIL_TAKEN
 
@@ -32,6 +32,16 @@ class UserService:
 
     async def get(self, user_id: uuid.UUID) -> UserOut:
         return UserOut.model_validate(await self.users.get(user_id))
+
+    async def me(self, user_id: uuid.UUID) -> MeOut:
+        """The caller's profile with their organization's name and size."""
+        user = UserOut.model_validate(await self.users.get(user_id))
+        organization = await self.session.get(Organization, self.tenant_id)
+        return MeOut(
+            **user.model_dump(),
+            organization_name=organization.name if organization else "",
+            member_count=await self.users.count(is_active=True),
+        )
 
     async def list(self, *, offset: int, limit: int) -> Page[UserOut]:
         rows = await self.users.list(offset=offset, limit=limit)

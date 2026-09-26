@@ -97,6 +97,19 @@ export const documentService = {
     return toDocument(result.document);
   },
 
+  /** Upload a new version of an existing document (processed like any upload). */
+  async uploadVersion(documentId: string, file: File): Promise<ContractDocument> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("document_id", documentId);
+    const result = await apiRequest<{ document: ApiDocument }>("/documents/upload", {
+      method: "POST",
+      body: form,
+      timeoutMs: 120_000,
+    });
+    return toDocument(result.document);
+  },
+
   /** Documents with at least two versions, each with its full version list
    *  (for the compare page). No contract analysis is triggered. */
   async comparable(): Promise<ContractDocument[]> {

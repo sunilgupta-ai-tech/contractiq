@@ -41,3 +41,4 @@ eval-reports/
 
 # Machine-specific compose overrides (e.g. port remapping)
 docker-compose.override.yml
+.gstack/

@@ -213,10 +213,18 @@ export function toDetail(
     clause: t.clause ?? "",
     page: t.page ?? 0,
   }));
+  const found = new Set(clauses.map((c) => c.id));
   return {
     ...base,
     clauses,
     keyTerms,
+    findings: analysis.findings.map((f) => ({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      rationale: f.rationale,
+      clauseId: !f.missing && found.has(f.topic) ? f.topic : undefined,
+    })),
     riskLevel: worstRisk(analysis.findings),
     riskCount: analysis.findings.length,
   };
@@ -273,6 +281,7 @@ export function toRiskFinding(f: ApiRiskFinding): RiskFinding {
     excerpt: f.excerpt ?? (f.missing ? "No such clause was found in this contract." : ""),
     rationale: f.rationale,
     status: f.status,
+    missing: f.missing,
   };
 }
 

@@ -15,14 +15,15 @@ from fastapi import APIRouter, Query, status
 
 from app.core.dependencies import CurrentUserDep, RequestMetaDep, UserManagerDep, UserServiceDep
 from app.schemas.common import ApiResponse, Page
-from app.schemas.user import CreateUserRequest, UpdateUserRequest, UserOut
+from app.schemas.user import CreateUserRequest, MeOut, UpdateUserRequest, UserOut
 
 router = APIRouter(tags=["users"])
 
 
-@router.get("/users/me", summary="Current user profile", response_model=ApiResponse[UserOut])
-async def get_me(user: CurrentUserDep, service: UserServiceDep) -> ApiResponse[UserOut]:
-    return ApiResponse(data=await service.get(user.user_id))
+@router.get("/users/me", summary="Current user profile", response_model=ApiResponse[MeOut])
+async def get_me(user: CurrentUserDep, service: UserServiceDep) -> ApiResponse[MeOut]:
+    """The caller's profile plus their organization's name and active member count."""
+    return ApiResponse(data=await service.me(user.user_id))
 
 
 @router.get(

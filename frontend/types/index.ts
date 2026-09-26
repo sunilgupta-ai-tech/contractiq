@@ -68,6 +68,8 @@ export interface KeyTerm {
 export interface ContractDetail extends ContractDocument {
   clauses: Clause[];
   keyTerms: KeyTerm[];
+  /** Live data only: every risk finding, including missing protective clauses. */
+  findings?: { id: string; title: string; severity: RiskLevel; rationale: string; clauseId?: string }[];
 }
 
 export interface Citation {
@@ -126,6 +128,8 @@ export interface RiskFinding {
   excerpt: string;
   rationale: string;
   status: "open" | "reviewing" | "accepted";
+  /** A protective clause was not found, so there is no clause or page to cite. */
+  missing?: boolean;
 }
 
 export interface KeyDate {

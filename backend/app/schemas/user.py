@@ -26,6 +26,13 @@ class UserOut(BaseModel):
     created_at: datetime
 
 
+class MeOut(UserOut):
+    """GET /users/me: the caller plus their organization, for the app shell."""
+
+    organization_name: str
+    member_count: int
+
+
 class CreateUserRequest(BaseModel):
     """An ADMIN adds a user to their own organization."""
 

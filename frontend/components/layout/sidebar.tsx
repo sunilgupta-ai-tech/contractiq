@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronsUpDown } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
+import { config } from "@/lib/config";
+import { initials, useMe } from "@/lib/session";
 import { cn } from "@/utils/cn";
 import { primaryNav, secondaryNav, type NavItem } from "./nav";
 
@@ -24,7 +26,8 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
       {active && <span className="absolute -left-3 top-1.5 h-6 w-[3px] rounded-r-full bg-brand" aria-hidden />}
       <Icon className={cn("h-[17px] w-[17px]", active ? "text-brand" : "text-rail-mute group-hover:text-rail-ink")} />
       <span className="flex-1">{item.label}</span>
-      {item.badge && (
+      {/* Badges are demo placeholders; live counts would need risk analysis on every page. */}
+      {item.badge && config.useDemoData && (
         <span className="num rounded-md bg-danger/20 px-1.5 text-2xs font-semibold text-[#FF9C92]">{item.badge}</span>
       )}
     </Link>
@@ -32,6 +35,7 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
 }
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const me = useMe();
   return (
     <div className="flex h-full flex-col bg-rail px-3 py-4 text-rail-ink">
       <div className="px-2 pb-6 pt-1">
@@ -39,10 +43,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <button className="mb-6 flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 text-left transition-colors hover:bg-white/[0.06]">
-        <span className="grid h-7 w-7 place-items-center rounded-md bg-[#E8B04B] text-[12px] font-bold text-rail">AL</span>
+        <span className="grid h-7 w-7 place-items-center rounded-md bg-[#E8B04B] text-[12px] font-bold text-rail">
+          {me ? initials(me.organization) : ""}
+        </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium">Acme Legal</span>
-          <span className="block text-2xs text-rail-mute">Organization · 12 seats</span>
+          <span className="block truncate text-[13px] font-medium">{me?.organization ?? "\u00a0"}</span>
+          <span className="block text-2xs text-rail-mute">
+            {me ? `Organization · ${me.members} ${me.members === 1 ? "member" : "members"}` : "\u00a0"}
+          </span>
         </span>
         <ChevronsUpDown className="h-4 w-4 text-rail-mute" />
       </button>

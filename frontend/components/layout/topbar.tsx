@@ -2,8 +2,10 @@
 
 import { Bell, Menu, Search } from "lucide-react";
 import { config } from "@/lib/config";
+import { initials, useMe } from "@/lib/session";
 
 export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
+  const me = useMe();
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-canvas/85 px-4 backdrop-blur-md sm:px-6 lg:px-8">
       <button onClick={onOpenNav} className="rounded-lg p-1.5 text-ink-2 hover:bg-sunken lg:hidden" aria-label="Open navigation">
@@ -34,11 +36,11 @@ export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
         </button>
         <button className="flex items-center gap-2.5 rounded-lg py-1 pl-1 pr-2 hover:bg-sunken" aria-label="Account">
           <span className="grid h-8 w-8 place-items-center rounded-full bg-brand-soft text-[12px] font-semibold text-brand-ink ring-1 ring-brand/20">
-            SG
+            {me ? initials(me.name) : ""}
           </span>
           <span className="hidden text-left leading-tight md:block">
-            <span className="block text-[13px] font-medium text-ink">Sunil Gupta</span>
-            <span className="block text-2xs text-ink-3">Admin</span>
+            <span className="block text-[13px] font-medium text-ink">{me?.name ?? "\u00a0"}</span>
+            <span className="block text-2xs text-ink-3">{me?.role ?? "\u00a0"}</span>
           </span>
         </button>
       </div>

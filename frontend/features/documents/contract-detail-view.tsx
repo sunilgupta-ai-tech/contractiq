@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { ArrowLeft, GitCompareArrows, History, MessageSquareText } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -10,10 +10,34 @@ import { RiskBadge } from "@/components/ui/risk-badge";
 import { ErrorState, Skeleton } from "@/components/ui/states";
 import { StatusPill } from "@/components/ui/status-pill";
 import { useAsync } from "@/hooks/use-async";
+import { ApiError } from "@/lib/api-client";
+import { config } from "@/lib/config";
 import { documentService } from "@/services/document-service";
 import type { Clause } from "@/types";
 import { cn } from "@/utils/cn";
 import { formatDate } from "@/utils/format";
+import { parseMarkdownTable } from "@/utils/markdown-table";
+
+/** A clause's text, or a real table when the clause is a table. */
+function ClauseText({ text }: { text: string }) {
+  const rows = parseMarkdownTable(text);
+  if (!rows) return <>{text}</>;
+  const [header, ...body] = rows;
+  return (
+    <span className="mt-2 block overflow-x-auto">
+      <table className="w-full border-collapse font-sans text-[13px]">
+        <thead>
+          <tr>{header!.map((cell, i) => <th key={i} className="border-b border-[#D9D3C4] px-2 py-1.5 text-left font-semibold">{cell}</th>)}</tr>
+        </thead>
+        <tbody>
+          {body.map((row, r) => (
+            <tr key={r}>{row.map((cell, i) => <td key={i} className="border-b border-[#ECE7DA] px-2 py-1.5">{cell}</td>)}</tr>
+          ))}
+        </tbody>
+      </table>
+    </span>
+  );
+}
 
 function groupBySection(clauses: Clause[]) {
   const map = new Map<string, Clause[]>();
@@ -27,6 +51,22 @@ export function ContractDetailView({ id }: { id: string }) {
   const { data: doc, error, loading, reload } = useAsync(() => documentService.get(id), [id]);
   const [selected, setSelected] = useState<string>("c-8-3");
   const sections = useMemo(() => groupBySection(doc?.clauses ?? []), [doc]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<ApiError | null>(null);
+
+  async function uploadVersion(file: File) {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await documentService.uploadVersion(id, file);
+      reload(); // the new version is now processing
+    } catch (err) {
+      setUploadError(err instanceof ApiError ? err : new ApiError("Upload failed.", "UNKNOWN", 0, null));
+    } finally {
+      setUploading(false);
+    }
+  }
 
   if (error) return <ErrorState error={error} onRetry={reload} />;
   if (loading || !doc) return <Skeleton className="h-[70vh] rounded-xl" />;
@@ -50,6 +90,24 @@ export function ContractDetailView({ id }: { id: string }) {
             </p>
           </div>
           <div className="flex gap-2">
+            {!config.useDemoData && (
+              <>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void uploadVersion(file);
+                  }}
+                />
+                <Button variant="secondary" disabled={uploading} onClick={() => fileInput.current?.click()}>
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload new version
+                </Button>
+              </>
+            )}
             <Link href="/compare">
               <Button variant="secondary"><GitCompareArrows className="h-4 w-4" /> Compare versions</Button>
             </Link>
@@ -60,6 +118,7 @@ export function ContractDetailView({ id }: { id: string }) {
         </div>
       </div>
 
+      {uploadError && <div className="mb-5"><ErrorState error={uploadError} /></div>}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)_320px]">
         {/* Outline */}
         <Card className="h-fit lg:sticky lg:top-20">
@@ -95,7 +154,9 @@ export function ContractDetailView({ id }: { id: string }) {
           <article className="mx-auto max-w-[720px] rounded-sm bg-[#FFFEFB] px-7 py-10 text-[#23252B] shadow-paper sm:px-14 sm:py-14 dark:bg-[#1B2029] dark:text-[#DADDE3]">
             <p className="text-center font-serif text-[13px] uppercase tracking-[0.25em] text-[#8A8577]">{doc.contractType} · {doc.version}</p>
             <h2 className="mt-2 text-center font-serif text-[26px]">{doc.title}</h2>
-            <p className="mb-10 mt-1 text-center text-[12.5px] text-[#8A8577]">between Acme Legal Holdings and {doc.counterparty}</p>
+            <p className="mb-10 mt-1 text-center text-[12.5px] text-[#8A8577]">
+              {doc.counterparty !== "—" ? `with ${doc.counterparty}` : "\u00a0"}
+            </p>
             {sections.map(([section, clauses]) => (
               <section key={section} className="mb-8">
                 <h3 className="mb-3 font-serif text-[15px] font-semibold uppercase tracking-[0.08em]">{section}</h3>
@@ -110,7 +171,7 @@ export function ContractDetailView({ id }: { id: string }) {
                     )}
                   >
                     <span className="mr-2 font-sans text-[12px] font-semibold text-[#8A8577]">{c.number}</span>
-                    <span className="font-semibold">{c.title}.</span> {c.text}
+                    <span className="font-semibold">{c.title}.</span> <ClauseText text={c.text} />
                     <span className="ml-2 font-sans text-2xs text-[#A09A8A]">p.{c.page}</span>
                   </p>
                 ))}
@@ -137,6 +198,25 @@ export function ContractDetailView({ id }: { id: string }) {
           </Card>
           <Card>
             <CardHeader eyebrow="Assessment" title="Risk" action={<RiskBadge level={doc.riskLevel} count={doc.riskCount} />} />
+            {doc.findings ? (
+              <ul className="space-y-3 px-5 py-4">
+                {doc.findings.length === 0 && <li className="text-[13px] text-ink-3">No risks flagged.</li>}
+                {doc.findings.map((f) => (
+                  <li key={f.id} className="text-[13px]">
+                    <button
+                      disabled={!f.clauseId}
+                      onClick={() => f.clauseId && setSelected(f.clauseId)}
+                      className="flex w-full items-center gap-2 text-left font-medium text-ink enabled:hover:text-brand"
+                    >
+                      <span className={cn("h-2 w-2 shrink-0 rounded-full", riskDot[f.severity])} />
+                      {f.title}
+                      {!f.clauseId && <span className="ml-auto shrink-0 text-2xs font-normal text-ink-3">not in contract</span>}
+                    </button>
+                    <p className="mt-0.5 pl-4 text-[12.5px] leading-5 text-ink-2">{f.rationale}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
             <ul className="space-y-2 px-5 py-4">
               {doc.clauses.filter((c) => c.risk).map((c) => (
                 <li key={c.id}>
@@ -147,6 +227,7 @@ export function ContractDetailView({ id }: { id: string }) {
                 </li>
               ))}
             </ul>
+            )}
           </Card>
           <Card>
             <CardHeader eyebrow="Lineage" title="Versions" action={<History className="h-4 w-4 text-ink-3" />} />

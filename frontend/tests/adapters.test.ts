@@ -83,6 +83,11 @@ describe("document adapters", () => {
     ]);
     expect(detail.keyTerms[0]).toEqual({ label: "Non-renewal notice", value: "90 days", clause: "3.1", page: 2 });
     expect([detail.riskLevel, detail.riskCount]).toEqual(["high", 2]);
+    // Findings link to their clause; a missing protective clause has none.
+    expect(detail.findings?.map((f) => [f.severity, f.clauseId])).toEqual([
+      ["medium", "auto_renewal"],
+      ["high", undefined],
+    ]);
     expect(toDetail(apiDoc, null).clauses).toEqual([]);
   });
 
@@ -112,7 +117,7 @@ describe("answer and analysis adapters", () => {
 
   it("explains missing-clause findings", () => {
     const missing = toRiskFinding(finding("liability_cap", "high", true));
-    expect(missing).toMatchObject({ clause: "—", page: 0, excerpt: "No such clause was found in this contract.", status: "open" });
+    expect(missing).toMatchObject({ clause: "—", page: 0, excerpt: "No such clause was found in this contract.", status: "open", missing: true });
     expect(toRiskFinding(finding("auto_renewal", "medium")).excerpt).toBe("shall automatically renew");
   });
 
