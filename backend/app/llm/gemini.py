@@ -9,6 +9,7 @@ import time
 
 import httpx
 
+from app.core.logging import get_logger
 from app.llm.base import (
     ChatMessage,
     EmbeddingConfigError,
@@ -27,6 +28,8 @@ from app.llm.embedding_utils import (
 
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
+logger = get_logger(__name__)
+
 
 class GeminiProvider:
     """Answer generation with Gemini (POST /models/{model}:generateContent).
@@ -43,8 +46,14 @@ class GeminiProvider:
         model: str,
         timeout_s: float = 60.0,
         transport: httpx.AsyncBaseTransport | None = None,  # tests inject a mock
+        thinking_budget: int | None = None,
     ) -> None:
         self.model = model
+        # Gemini 2.5 models "think" before answering, and thinking tokens count
+        # against maxOutputTokens (and are billed as output). None = model
+        # default; 0 = no thinking (2.5 Flash), which keeps short structured
+        # replies from being cut off and costs less.
+        self.thinking_budget = thinking_budget
         # Key goes in a header, not the URL, so it never lands in access logs.
         self._client = httpx.AsyncClient(
             base_url=_BASE_URL,
@@ -66,10 +75,10 @@ class GeminiProvider:
             for m in messages
             if m.role != "system"
         ]
-        payload: dict[str, object] = {
-            "contents": contents,
-            "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
-        }
+        config: dict[str, object] = {"temperature": temperature, "maxOutputTokens": max_tokens}
+        if self.thinking_budget is not None:
+            config["thinkingConfig"] = {"thinkingBudget": self.thinking_budget}
+        payload: dict[str, object] = {"contents": contents, "generationConfig": config}
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
         try:
@@ -89,11 +98,18 @@ class GeminiProvider:
         if not text.strip():
             reason = candidates[0].get("finishReason") if candidates else "NO_CANDIDATES"
             raise LLMBlockedError(f"Gemini returned no text (finishReason={reason})")
+        if candidates[0].get("finishReason") == "MAX_TOKENS":
+            # The reply was cut off (often by thinking tokens using the budget).
+            logger.warning("llm_truncated", extra={"model": self.model, "max_tokens": max_tokens})
+        # Thinking tokens are billed as output: count them, or cost is understated.
+        completion = usage.get("candidatesTokenCount")
+        if usage.get("thoughtsTokenCount"):
+            completion = (completion or 0) + usage["thoughtsTokenCount"]
         return LLMResult(
             text=text,
             model=self.model,
             prompt_tokens=usage.get("promptTokenCount"),
-            completion_tokens=usage.get("candidatesTokenCount"),
+            completion_tokens=completion,
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
         )
 

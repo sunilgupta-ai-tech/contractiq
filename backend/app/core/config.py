@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3.1:8b"
     gemini_api_key: SecretStr | None = None
     gemini_model: str = "gemini-2.5-flash"
+    # Gemini 2.5 "thinking" budget in tokens; unset = model default. 0 turns it
+    # off on 2.5 Flash: cheaper, faster, and short JSON replies aren't cut off.
+    gemini_thinking_budget: int | None = None
     llm_timeout_s: float = 60.0
     llm_max_output_tokens: int = 1024
 

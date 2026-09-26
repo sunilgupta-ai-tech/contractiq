@@ -198,6 +198,8 @@ def parse_extraction(topic: Topic, reply: str, chunks: list[RetrievedChunk]) -> 
         logger.warning("clause_extraction_unparseable", extra={"topic": topic.key})
         return ExtractedClause(topic.key, topic.label, found=False, error=True)
     number = data.get("excerpt")
+    if isinstance(number, str) and number.strip().isdigit():
+        number = int(number)  # models sometimes quote the number: "1"
     if data.get("found") is not True or not isinstance(number, int):
         return ExtractedClause(topic.key, topic.label, found=False)
     if not 1 <= number <= len(chunks):

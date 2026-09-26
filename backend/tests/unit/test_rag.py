@@ -181,6 +181,44 @@ async def test_gemini_generate_request_and_response():
     assert (result.text, result.prompt_tokens, result.completion_tokens) == ("60 days [1].", 120, 7)
 
 
+async def test_gemini_thinking_budget_and_billed_thinking_tokens(caplog):
+    # Found in local testing: Gemini 2.5 thinking tokens use the output budget
+    # (cutting short JSON replies) and are billed as output.
+    seen = {}
+
+    def handler(request):
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {"parts": [{"text": '{"found": true'}]},
+                        "finishReason": "MAX_TOKENS",
+                    }
+                ],
+                "usageMetadata": {
+                    "promptTokenCount": 50,
+                    "candidatesTokenCount": 10,
+                    "thoughtsTokenCount": 590,
+                },
+            },
+        )
+
+    provider = GeminiProvider(
+        "k", "gemini-2.5-flash", transport=httpx.MockTransport(handler), thinking_budget=0
+    )
+    with caplog.at_level("WARNING"):
+        result = await provider.generate([ChatMessage("user", "q")], max_tokens=600)
+    assert seen["body"]["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+    assert result.completion_tokens == 600
+    assert any(r.getMessage() == "llm_truncated" for r in caplog.records)
+
+    default = GeminiProvider("k", "m", transport=httpx.MockTransport(handler))
+    await default.generate([ChatMessage("user", "q")])
+    assert "thinkingConfig" not in seen["body"]["generationConfig"]  # model default
+
+
 @pytest.mark.parametrize(
     ("response", "error"),
     [

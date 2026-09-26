@@ -18,6 +18,7 @@ def create_llm(settings: Settings) -> LLMProvider:
             settings.gemini_api_key.get_secret_value(),
             settings.gemini_model,
             timeout_s=settings.llm_timeout_s,
+            thinking_budget=settings.gemini_thinking_budget,
         )
     from app.llm.ollama import OllamaProvider
 
@@ -42,6 +43,7 @@ def create_vision(settings: Settings) -> LLMProvider:
             settings.gemini_api_key.get_secret_value(),
             settings.vision_model,
             timeout_s=settings.vision_timeout_s,
+            thinking_budget=settings.gemini_thinking_budget,
         )
     from app.llm.ollama import OllamaProvider
 

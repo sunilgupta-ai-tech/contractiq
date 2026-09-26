@@ -23,7 +23,9 @@ Each carries a fingerprint (extractor version + answer model + embedding
 model). A different fingerprint means "stale": it is recomputed on next use,
 never served. Deleting a document deletes its folder, analyses included.
 A version's text never changes after processing, so no other invalidation
-is needed. An analysis with a failed topic is not cached (so it is retried).
+is needed. A topic whose extraction failed is stored as failed and retried
+on the next use — only that topic, so one flaky topic never re-runs the
+other fourteen.
 
 Multi-document requests
 -----------------------
@@ -49,6 +51,7 @@ from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedR
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.clause_agent import EXTRACTOR_VERSION, ClauseAgent, ExtractedClause, clause_label
+from app.agents.clause_topics import TOPICS_BY_KEY
 from app.agents.prompts import parse_json_object
 from app.agents.risk_agent import RiskAgent, RiskFinding, Severity, VersionInfo
 from app.core.config import Settings
@@ -265,13 +268,24 @@ class ContractAnalyzer:
         return analysis if analysis.fingerprint == self.fingerprint else None
 
     async def clauses(self, ref: VersionRef, *, refresh: bool = False) -> ClauseAnalysis:
-        if not refresh and (hit := await self.cached(ref)) is not None:
+        hit = None if refresh else await self.cached(ref)
+        if hit is not None and hit.complete:
             return hit
-        clauses = await self.agent.extract(tenant_id=ref.tenant_id, version_id=ref.version_id)
+        if hit is None:
+            clauses = await self.agent.extract(tenant_id=ref.tenant_id, version_id=ref.version_id)
+        else:
+            # Retry only the topics that failed last time; keep the rest.
+            failed = [TOPICS_BY_KEY[c.topic] for c in hit.clauses if c.error]
+            retried = {
+                c.topic: c
+                for c in await self.agent.extract(
+                    tenant_id=ref.tenant_id, version_id=ref.version_id, topics=failed
+                )
+            }
+            clauses = [retried.get(c.topic, c) for c in hit.clauses]
         analysis = ClauseAnalysis(self.fingerprint, self.model, datetime.now(UTC), clauses)
-        if analysis.complete:
-            key = ref.key("analysis/clauses.json")
-            await self.storage.put(key, analysis.to_json(), "application/json")
+        key = ref.key("analysis/clauses.json")
+        await self.storage.put(key, analysis.to_json(), "application/json")
         return analysis
 
     def findings(self, analysis: ClauseAnalysis, ref: VersionRef) -> list[RiskFinding]:

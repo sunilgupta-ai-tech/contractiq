@@ -38,3 +38,6 @@ workers/.run/
 
 # Evaluation output (the committed baseline lives in backend/eval/baseline/)
 eval-reports/
+
+# Machine-specific compose overrides (e.g. port remapping)
+docker-compose.override.yml

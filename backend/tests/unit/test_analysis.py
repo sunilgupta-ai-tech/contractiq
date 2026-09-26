@@ -161,7 +161,7 @@ def test_paraphrased_quote_is_replaced_by_the_evidence():
     "reply",
     [
         '{"found": true, "excerpt": 7, "quote": "x"}',  # invented excerpt
-        '{"found": true, "excerpt": "1"}',  # not an int
+        '{"found": true, "excerpt": "first"}',  # not a number
         '{"found": false}',
         '{"found": "true", "excerpt": 1}',  # not a real boolean
     ],
@@ -413,11 +413,27 @@ async def test_analysis_is_cached_per_version_and_fingerprint(tmp_path):
     assert len(llm.calls) == 3 * calls
 
 
-async def test_incomplete_analysis_is_not_cached(tmp_path):
+async def test_failed_topics_are_kept_and_only_they_are_retried(tmp_path):
+    # Found in local testing with Gemini: re-running all 15 topics whenever
+    # one failed multiplied cost on every risk/summary request.
     llm = TopicLLM({"Indemnity": LLMError("503")})
     first = await _analyzer(tmp_path, llm).clauses(REF)
-    assert not first.complete
-    assert await _analyzer(tmp_path, llm).cached(REF) is None
+    assert not first.complete and first.cached is False
+    stored = await _analyzer(tmp_path, llm).cached(REF)
+    assert stored is not None and [c.topic for c in stored.clauses if c.error] == ["indemnity"]
+
+    llm.by_label = {"Termination for convenience": TERMINATION_REPLY}  # indemnity now works
+    calls = len(llm.calls)
+    second = await _analyzer(tmp_path, llm).clauses(REF)
+    assert len(llm.calls) == calls + 1  # just the failed topic
+    assert second.complete
+    assert await _analyzer(tmp_path, llm).cached(REF) is not None
+
+
+def test_excerpt_number_given_as_text_is_accepted():
+    reply = json.dumps({"found": True, "excerpt": "1", "quote": NOTICE.text})
+    clause = parse_extraction(TERMINATION, reply, [NOTICE])
+    assert clause.found and clause.verified
 
 
 async def test_summary_cites_clauses_and_validates_obligations(tmp_path):
