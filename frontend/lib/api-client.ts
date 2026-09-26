@@ -41,6 +41,7 @@ export interface RequestOptions extends Omit<RequestInit, "body"> {
 // not closing the tab, and is never sent to other origins. (A BFF with
 // httpOnly cookies remains the planned hardening; see docs/security.md.)
 const TOKEN_KEY = "ciq.access_token";
+const REFRESH_KEY = "ciq.refresh_token";
 let accessToken: string | null = null;
 
 function storage(): Storage | null {
@@ -66,10 +67,59 @@ export const getAccessToken = (): string | null => {
 
 export const hasSession = (): boolean => getAccessToken() !== null;
 
-/** An expired or missing session sends the user to sign in again. */
+/** Store both tokens after sign-in / sign-up. The refresh token lets the
+ *  session be renewed silently when the (short-lived) access token expires. */
+export function setSession(access: string, refresh: string): void {
+  setAccessToken(access);
+  try {
+    storage()?.setItem(REFRESH_KEY, refresh);
+  } catch {
+    // storage unavailable: the session simply can't be renewed
+  }
+}
+
+function clearSession(): void {
+  setAccessToken(null);
+  try {
+    storage()?.removeItem(REFRESH_KEY);
+  } catch {
+    // nothing to clear
+  }
+}
+
+// Refresh tokens are single-use (Phase 2), so concurrent 401s must share one
+// renewal: the second caller waits for the first instead of spending an
+// already-used token and failing.
+let renewal: Promise<boolean> | null = null;
+
+async function renewSession(): Promise<boolean> {
+  const refresh = storage()?.getItem(REFRESH_KEY);
+  if (!refresh) return false;
+  try {
+    const response = await fetch(`${config.apiBaseUrl}${config.apiPrefix}/auth/refresh`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!response.ok) return false;
+    const payload = (await response.json()) as Envelope<{ access_token: string; refresh_token: string }>;
+    if (!payload.data) return false;
+    setSession(payload.data.access_token, payload.data.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function refreshSession(): Promise<boolean> {
+  if (!renewal) renewal = renewSession().finally(() => (renewal = null));
+  return renewal;
+}
+
+/** The session is over (renewal failed): sign in again. */
 function onUnauthorized(path: string): void {
   if (path.startsWith("/auth/") || typeof window === "undefined") return;
-  setAccessToken(null);
+  clearSession();
   if (window.location.pathname !== "/login") window.location.assign("/login");
 }
 
@@ -86,6 +136,10 @@ export function parseEnvelope<T>(status: number, payload: unknown, acceptErrorDa
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return send<T>(path, options, true);
+}
+
+async function send<T>(path: string, options: RequestOptions, mayRenew: boolean): Promise<T> {
   const { body, timeoutMs = 15_000, acceptErrorData, headers, ...init } = options;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -104,7 +158,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
     });
     const payload = await response.json().catch(() => null);
-    if (response.status === 401 && !config.useDemoData) onUnauthorized(path);
+    if (response.status === 401 && !config.useDemoData && !path.startsWith("/auth/")) {
+      // Expired access token: renew silently and send the same request again,
+      // so the user's question (or upload) isn't lost.
+      if (mayRenew && (await refreshSession())) {
+        clearTimeout(timer);
+        return send<T>(path, options, false);
+      }
+      onUnauthorized(path);
+    }
     return parseEnvelope<T>(response.status, payload, acceptErrorData);
   } catch (error) {
     if (error instanceof ApiError) throw error;

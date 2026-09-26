@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
-import { ApiError, apiRequest, setAccessToken } from "@/lib/api-client";
+import { ApiError, apiRequest, setSession } from "@/lib/api-client";
 import { config } from "@/lib/config";
 
 interface TokenPair {
@@ -38,7 +38,7 @@ export function LoginForm() {
                 method: "POST",
                 body: { email, password, full_name: fullName, organization_name: organization },
               });
-        setAccessToken(tokens.access_token);
+        setSession(tokens.access_token, tokens.refresh_token);
       }
       router.push("/");
     } catch (err) {
