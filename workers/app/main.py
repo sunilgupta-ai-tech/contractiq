@@ -13,10 +13,12 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from arq.connections import RedisSettings
+from prometheus_client import start_http_server
 
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.resources import Resources
+from app.observability.tracing import configure_langsmith
 from app.queue import QUEUE_NAME
 
 from .tasks.analysis import analyze_version
@@ -26,10 +28,14 @@ from .tasks.indexing import delete_document_vectors
 
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_json)
+configure_langsmith(settings)
 logger = get_logger("contractiq.worker")
 
 
 async def startup(ctx: dict[str, Any]) -> None:
+    if settings.metrics_enabled and settings.worker_metrics_port:
+        # Prometheus scrapes the worker here (Phase 13); one server per process.
+        start_http_server(settings.worker_metrics_port)
     ctx["resources"] = Resources.create(settings)
     await ctx["resources"].bootstrap()
     logger.info("worker_started", extra={"queue": QUEUE_NAME})

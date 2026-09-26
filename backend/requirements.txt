@@ -41,3 +41,6 @@ pillow==12.3.0
 # Gemini/Ollama providers (app/llm), so langchain, langchain-google-genai and
 # langchain-ollama are not needed — one LLM layer, not two.
 langgraph==1.2.12
+
+# --- Observability (Phase 13) ---
+prometheus-client==0.21.1

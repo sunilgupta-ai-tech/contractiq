@@ -218,6 +218,19 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
 
     # --- Observability ---
+    # Prometheus metrics at GET /metrics (and WORKER_METRICS_PORT on the worker,
+    # 0 = off). If METRICS_TOKEN is set, scrapes must send it as a bearer token.
+    metrics_enabled: bool = True
+    metrics_token: SecretStr | None = None
+    worker_metrics_port: int = 9101
+    # USD per million tokens by model name, for cost metrics; e.g.
+    # {"gemini-2.5-flash": {"input_per_mtok": 0.30, "output_per_mtok": 2.50}}.
+    # No built-in prices: take them from the provider's current price list.
+    llm_pricing: dict[str, dict[str, float]] = Field(default_factory=dict)
+    # Per-question traces: auto (Langfuse if keys are set) | langfuse | log | none.
+    tracing: Literal["auto", "langfuse", "log", "none"] = "auto"
+    # Send question/answer text to the tracing backend (off: ids/timings only).
+    langfuse_capture_content: bool = False
     langsmith_api_key: SecretStr | None = None
     langsmith_tracing: bool = False
     langfuse_public_key: SecretStr | None = None

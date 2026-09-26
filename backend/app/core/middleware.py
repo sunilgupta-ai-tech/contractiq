@@ -15,6 +15,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.logging import get_logger, request_id_ctx
+from app.observability import metrics
 
 logger = get_logger("contractiq.http")
 
@@ -110,6 +111,7 @@ class RequestContextMiddleware:
             await self.app(scope, receive, send_wrapper)
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            _observe(scope, status_code, duration_ms)
             if scope["path"] not in ("/api/v1/health",):
                 logger.info(
                     "%s %s %s %.2fms",
@@ -120,3 +122,12 @@ class RequestContextMiddleware:
                     extra={"status": status_code, "duration_ms": duration_ms},
                 )
             request_id_ctx.reset(token)
+
+
+def _observe(scope: Scope, status_code: int, duration_ms: float) -> None:
+    """HTTP metrics (Phase 13), labelled by route *template* ("/documents/{document_id}")
+    so ids in paths never become label values; unmatched paths share one label."""
+    route = getattr(scope.get("route"), "path", None) or "unmatched"
+    method = scope.get("method", "")
+    metrics.HTTP_REQUESTS.labels(method=method, route=route, status=str(status_code)).inc()
+    metrics.HTTP_LATENCY.labels(method=method, route=route).observe(duration_ms / 1000)

@@ -49,4 +49,10 @@ Implemented in Phase 11 (details in [guardrails.md](guardrails.md)):
 * Groundedness check on every answer (numbers must appear in the cited evidence; key terms must overlap). Reported as `groundedness` / `unsupported_claims`; `GROUNDING_MODE=enforce` withholds unverifiable answers.
 * Agent tool arguments are validated (size and type limits, no unknown arguments) before any tool runs.
 
+Implemented in Phase 13 ([observability.md](observability.md)):
+
+* Metrics carry no tenant or user labels; `/metrics` sits outside the API, is hidden from OpenAPI, and can require `METRICS_TOKEN` (compared in constant time).
+* Model-call logs and traces record ids, sizes, timings and scores, never prompt, question, answer or contract text. Sending content to Langfuse is an explicit opt-in (`LANGFUSE_CAPTURE_CONTENT`).
+* Tracing export runs in the background with a timeout; a failing tracing backend cannot affect requests.
+
 Planned: AV scanning of uploads; httpOnly-cookie sessions via a frontend BFF route (the frontend still holds the access token in memory).

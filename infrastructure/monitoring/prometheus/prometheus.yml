@@ -1,0 +1,20 @@
+# Example scrape configuration (Phase 13). Adjust targets to your deployment:
+# in ECS/Kubernetes use service discovery instead of static targets.
+global:
+  scrape_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: contractiq-api
+    metrics_path: /metrics
+    # If METRICS_TOKEN is set on the API:
+    # authorization: { type: Bearer, credentials_file: /etc/prometheus/contractiq-metrics-token }
+    static_configs:
+      - targets: ["backend:8000"]
+
+  - job_name: contractiq-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker:9101"]  # WORKER_METRICS_PORT; one target per worker replica

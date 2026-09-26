@@ -21,6 +21,8 @@ from app.core.logging import get_logger
 from app.db.database import Database
 from app.llm.base import EmbeddingProvider, LLMProvider
 from app.llm.factory import create_embeddings, create_llm, create_vision
+from app.observability.llm_monitoring import MonitoredEmbeddings, MonitoredLLM
+from app.observability.tracing import Exporter, LangfuseExporter, build_exporter
 from app.queue import create_queue
 from app.storage import ObjectStorage, create_storage
 from app.vectorstore.collections import ensure_collection
@@ -42,6 +44,7 @@ class Resources:
     _embeddings: EmbeddingProvider | None = field(default=None, repr=False)
     _llm: LLMProvider | None = field(default=None, repr=False)
     _vision: LLMProvider | None = field(default=None, repr=False)
+    _tracer: Exporter | None = field(default=None, repr=False)
 
     def vision(self) -> LLMProvider:
         """The image-captioning model (Phase 9), created on first use.
@@ -49,8 +52,16 @@ class Resources:
         Raises LLMConfigError if it is misconfigured (e.g. no API key).
         """
         if self._vision is None:
-            self._vision = create_vision(self.settings)
+            self._vision = MonitoredLLM(
+                create_vision(self.settings), role="vision", pricing=self.settings.llm_pricing
+            )
         return self._vision
+
+    def tracer(self) -> Exporter:
+        """Where per-question traces go (Phase 13; see observability/tracing.py)."""
+        if self._tracer is None:
+            self._tracer = build_exporter(self.settings)
+        return self._tracer
 
     def llm(self) -> LLMProvider:
         """The configured answer-generation model, created on first use.
@@ -58,7 +69,10 @@ class Resources:
         Raises LLMConfigError if it is misconfigured (e.g. no API key).
         """
         if self._llm is None:
-            self._llm = create_llm(self.settings)
+            # Monitored (Phase 13): every call's tokens, latency and cost are recorded.
+            self._llm = MonitoredLLM(
+                create_llm(self.settings), role="llm", pricing=self.settings.llm_pricing
+            )
         return self._llm
 
     def embeddings(self) -> EmbeddingProvider:
@@ -67,7 +81,7 @@ class Resources:
         Raises EmbeddingConfigError if it is misconfigured (e.g. no API key).
         """
         if self._embeddings is None:
-            self._embeddings = create_embeddings(self.settings)
+            self._embeddings = MonitoredEmbeddings(create_embeddings(self.settings))
         return self._embeddings
 
     @classmethod
@@ -104,3 +118,5 @@ class Resources:
             await self._llm.aclose()
         if self._vision is not None:
             await self._vision.aclose()
+        if isinstance(self._tracer, LangfuseExporter):
+            await self._tracer.aclose()

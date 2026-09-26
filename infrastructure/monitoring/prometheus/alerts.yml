@@ -1,0 +1,57 @@
+# Example alert rules (Phase 13). Thresholds are starting points: tune them
+# to your traffic and to the latencies your evaluation baseline shows.
+groups:
+  - name: contractiq
+    rules:
+      - alert: ContractIQHighErrorRate
+        expr: |
+          sum(rate(contractiq_http_requests_total{status=~"5.."}[5m]))
+            / sum(rate(contractiq_http_requests_total[5m])) > 0.05
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "More than 5% of API requests fail with 5xx"
+
+      - alert: ContractIQSlowAnswers
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(contractiq_http_request_duration_seconds_bucket{route="/api/v1/query"}[10m]))
+          ) > 30
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "p95 /query latency above 30 s"
+
+      - alert: ContractIQModelErrors
+        expr: |
+          sum by (role, model) (rate(contractiq_llm_calls_total{outcome=~"error|config_error"}[10m]))
+            / sum by (role, model) (rate(contractiq_llm_calls_total[10m])) > 0.1
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "More than 10% of {{ $labels.role }} calls to {{ $labels.model }} fail"
+
+      - alert: ContractIQGroundednessDrop
+        # Share of answered questions with groundedness above 0.5 (the le="0.5" bucket holds the rest).
+        expr: |
+          1 - (
+            sum(rate(contractiq_answer_groundedness_bucket{le="0.5"}[1h]))
+              / sum(rate(contractiq_answer_groundedness_count[1h]))
+          ) < 0.8
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "Fewer than 80% of answers are well grounded (score above 0.5)"
+
+      - alert: ContractIQDocumentFailures
+        expr: sum(increase(contractiq_documents_processed_total{outcome="failed"}[30m])) > 5
+        labels: { severity: ticket }
+        annotations:
+          summary: "More than 5 documents failed processing in 30 minutes (not bad files: those are 'rejected')"
+
+      - alert: ContractIQCostSpike
+        # Only meaningful when LLM_PRICING is configured.
+        expr: sum(increase(contractiq_llm_cost_usd_total[1h])) > 20
+        labels: { severity: ticket }
+        annotations:
+          summary: "Model spend above $20 in the last hour"

@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger, tenant_id_ctx
 from app.db.models import Document, DocumentStatus, DocumentVersion, JobStatus, ProcessingJob
 from app.document_processing.parser import PdfProcessingError
+from app.observability import metrics
 
 from ..services.pipeline import PIPELINE, Stage, StageContext
 
@@ -163,6 +164,7 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                 finished_at=datetime.now(UTC),
                 stage_timings_ms=dict(timings),
             )
+            _observe(timings, "rejected" if permanent else "failed")
             if isinstance(exc, PdfProcessingError):
                 return {"status": "FAILED", "reason": exc.user_message, "timings_ms": timings}
             raise
@@ -183,4 +185,12 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             document.current_version_id = version.id
         await session.commit()
         logger.info("document_processed", extra={"job_id": job_id, "timings_ms": timings})
+        _observe(timings, "completed")
         return {"status": "COMPLETED", "timings_ms": timings}
+
+
+def _observe(timings: dict[str, float], outcome: str) -> None:
+    """Worker metrics (Phase 13): outcome count and per-stage latency."""
+    metrics.DOCUMENTS_PROCESSED.labels(outcome=outcome).inc()
+    for stage, ms in timings.items():
+        metrics.PIPELINE_STAGE_LATENCY.labels(stage=stage).observe(ms / 1000)

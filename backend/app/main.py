@@ -13,12 +13,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.metrics import router as metrics_router
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
 from app.core.resources import Resources
+from app.observability.tracing import configure_langsmith
 
 logger = get_logger(__name__)
 
@@ -26,6 +28,7 @@ logger = get_logger(__name__)
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_json)
+    configure_langsmith(settings)  # LangGraph agent traces, when enabled (Phase 13)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -71,6 +74,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
+    app.state.settings = settings
+    if settings.metrics_enabled:
+        app.include_router(metrics_router)  # GET /metrics (Phase 13)
 
     @app.get("/", include_in_schema=False)
     async def root() -> dict[str, str]:

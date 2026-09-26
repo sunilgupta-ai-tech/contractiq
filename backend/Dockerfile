@@ -13,6 +13,10 @@ RUN pip install -r requirements.txt
 
 FROM python:3.11-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH"
+# uvicorn --workers N: each process writes Prometheus samples here and
+# GET /metrics aggregates them (see app/observability/metrics.py). /tmp is
+# fresh per container, so no stale samples survive a restart.
+ENV PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus-metrics
 # Non-root user: a compromised process must not own the container.
 RUN groupadd -r app && useradd -r -g app -d /srv/app app \
     && mkdir -p /data/storage && chown -R app:app /data

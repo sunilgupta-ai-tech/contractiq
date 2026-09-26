@@ -285,6 +285,30 @@ async def test_background_analysis_caches_the_version_analysis(env):
     assert gone["status"] == "skipped"
 
 
+async def test_processed_documents_are_counted_in_metrics(env):
+    from prometheus_client import REGISTRY
+
+    def count(outcome):
+        return (
+            REGISTRY.get_sample_value("contractiq_documents_processed_total", {"outcome": outcome})
+            or 0.0
+        )
+
+    db, resources = env
+    completed, rejected = count("completed"), count("rejected")
+    await process_document(
+        {"resources": resources}, await _seed(resources, pdf_factory.contract_pdf())
+    )
+    await process_document(
+        {"resources": resources}, await _seed(resources, pdf_factory.encrypted_pdf())
+    )
+    assert (count("completed"), count("rejected")) == (completed + 1, rejected + 1)
+    parse_count = REGISTRY.get_sample_value(
+        "contractiq_pipeline_stage_duration_seconds_count", {"stage": "parse"}
+    )
+    assert parse_count and parse_count >= 2
+
+
 async def test_password_protected_pdf_fails_permanently_without_retry(env):
     db, resources = env
     job_id = await _seed(resources, pdf_factory.encrypted_pdf())

@@ -42,6 +42,8 @@ from app.db.repositories.document_repository import (
 )
 from app.guardrails.evidence_validator import UNVERIFIED_MESSAGE, should_withhold
 from app.llm.base import EmbeddingConfigError, EmbeddingError, LLMConfigError, LLMError
+from app.observability.llm_monitoring import record_answer
+from app.observability.tracing import end_trace, export_in_background, start_trace
 from app.rag.pipelines.qa import QAPipeline, RagAnswer
 from app.schemas.query import (
     AgentInfo,
@@ -108,8 +110,39 @@ class QueryService:
             conversation.id, self.resources.settings.conversation_history_turns
         )
 
-        result = self._apply_grounding_policy(await self._run_pipeline(request, history))
+        mode = self._mode(request)
+        # One trace per question (Phase 13): model calls attach to it as they
+        # happen; the pipeline's timed steps are added once it returns.
+        trace = start_trace(
+            "query",
+            user_id=str(self.user_id),
+            session_id=str(conversation.id),
+            metadata={"mode": mode},
+        )
+        capture = self.resources.settings.langfuse_capture_content
+        if capture:
+            trace.input = request.question
+        try:
+            result = self._apply_grounding_policy(await self._run_pipeline(request, history))
+        except Exception:
+            trace.metadata["outcome"] = "error"
+            self._finish_trace()
+            raise
         latency_ms = int((time.perf_counter() - started) * 1000)
+        outcome = record_answer(
+            result, mode=mode, withheld=result.answer == UNVERIFIED_MESSAGE, latency_ms=latency_ms
+        )
+        trace.add_steps(result.steps)
+        trace.metadata.update(
+            outcome=outcome,
+            model=result.model,
+            prompt_version=result.prompt_version,
+            groundedness=result.grounding.score if result.grounding else None,
+            citations=len(result.citations),
+        )
+        if capture:
+            trace.output = result.answer
+        self._finish_trace()
 
         self.session.add(
             Message(
@@ -134,9 +167,7 @@ class QueryService:
         )
         self.session.add(assistant)
         await self.session.commit()
-        return _response(
-            request, conversation.id, assistant.id, result, latency_ms, self._mode(request)
-        )
+        return _response(request, conversation.id, assistant.id, result, latency_ms, mode)
 
     async def _validate_scope(self, request: QueryRequest) -> None:
         documents = DocumentRepository(self.session, self.tenant_id)
@@ -161,6 +192,11 @@ class QueryService:
             )
         )
         return conversation
+
+    def _finish_trace(self) -> None:
+        trace = end_trace()
+        if trace is not None:
+            export_in_background(self.resources.tracer(), trace)
 
     def _apply_grounding_policy(self, result: RagAnswer) -> RagAnswer:
         """Phase 11: log weakly grounded answers; under GROUNDING_MODE=enforce,

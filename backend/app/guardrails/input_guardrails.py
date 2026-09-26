@@ -46,6 +46,7 @@ from app.cache.redis import tenant_cache_key
 from app.core.config import Settings
 from app.core.exceptions import RateLimitedError
 from app.core.logging import get_logger
+from app.observability import metrics
 
 logger = get_logger(__name__)
 
@@ -81,6 +82,7 @@ class RateLimiter:
         count, retry_after = await self._incr(limit, subject, tenant_id)
         if count > limit.max_requests:
             logger.warning("rate_limited", extra={"limit": limit.name})
+            metrics.RATE_LIMITED.labels(limit=limit.name).inc()
             raise _limited(retry_after)
 
     async def check(self, limit: Limit, subject: str, *, tenant_id: str | None = None) -> None:
@@ -96,6 +98,7 @@ class RateLimiter:
             return
         if raw is not None and int(raw) >= limit.max_requests:
             logger.warning("rate_limited", extra={"limit": limit.name})
+            metrics.RATE_LIMITED.labels(limit=limit.name).inc()
             raise _limited(retry_after)
 
     async def record(self, limit: Limit, subject: str, *, tenant_id: str | None = None) -> None:
