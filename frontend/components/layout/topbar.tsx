@@ -1,25 +1,54 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Bell, Menu, Search } from "lucide-react";
 import { config } from "@/lib/config";
 import { initials, useMe } from "@/lib/session";
 
 export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
   const me = useMe();
+  const router = useRouter();
+  const input = useRef<HTMLInputElement>(null);
+
+  // ⌘K / Ctrl+K focuses the question box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        input.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const q = input.current?.value.trim();
+    if (!q) return;
+    input.current!.value = "";
+    router.push(`/assistant?q=${encodeURIComponent(q)}`);
+  }
+
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-canvas/85 px-4 backdrop-blur-md sm:px-6 lg:px-8">
       <button onClick={onOpenNav} className="rounded-lg p-1.5 text-ink-2 hover:bg-sunken lg:hidden" aria-label="Open navigation">
         <Menu className="h-5 w-5" />
       </button>
 
-      <label className="group flex h-9 w-full max-w-md items-center gap-2 rounded-lg border border-line bg-surface px-3 text-ink-3 shadow-card focus-within:border-brand/50">
-        <Search className="h-4 w-4 shrink-0" />
-        <input
-          placeholder="Search contracts, clauses, counterparties…"
-          className="w-full bg-transparent text-[13.5px] text-ink placeholder:text-ink-3 focus:outline-none"
-        />
-        <kbd className="hidden rounded border border-line bg-sunken px-1.5 font-mono text-2xs text-ink-3 sm:block">⌘K</kbd>
-      </label>
+      <form onSubmit={submit} className="w-full max-w-md" role="search">
+        <label className="group flex h-9 w-full items-center gap-2 rounded-lg border border-line bg-surface px-3 text-ink-3 shadow-card focus-within:border-brand/50">
+          <Search className="h-4 w-4 shrink-0" />
+          <input
+            ref={input}
+            aria-label="Ask about your contracts"
+            placeholder="Ask about your contracts… (Enter)"
+            className="w-full bg-transparent text-[13.5px] text-ink placeholder:text-ink-3 focus:outline-none"
+          />
+          <kbd className="hidden rounded border border-line bg-sunken px-1.5 font-mono text-2xs text-ink-3 sm:block">⌘K</kbd>
+        </label>
+      </form>
 
       <div className="ml-auto flex items-center gap-2">
         {config.useDemoData && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, ChevronDown, Loader2, Workflow } from "lucide-react";
 import type { AgentStep } from "@/types";
 import { cn } from "@/utils/cn";
@@ -8,6 +8,11 @@ import { cn } from "@/utils/cn";
 /** Visualises the LangGraph run: each node, what it did and how long it took. */
 export function AgentTrace({ steps, live }: { steps: AgentStep[]; live?: boolean }) {
   const [open, setOpen] = useState(!!live);
+  // Expanded while the agent works; folded once done so the answer is in view
+  // (click the header to expand it again).
+  useEffect(() => {
+    if (!live) setOpen(false);
+  }, [live]);
   const total = steps.reduce((n, s) => n + s.durationMs, 0);
   const expanded = open || live;
 

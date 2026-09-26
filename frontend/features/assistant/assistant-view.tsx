@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Clock, Cpu, MessageSquareText } from "lucide-react";
 import { ErrorState } from "@/components/ui/states";
 import { ApiError } from "@/lib/api-client";
-import { demoAgentSteps, demoDocuments, suggestedQuestions } from "@/lib/demo/fixtures";
+import { demoAgentSteps, suggestedQuestions } from "@/lib/demo/fixtures";
+import { documentService } from "@/services/document-service";
 import { queryService } from "@/services/query-service";
 import type { AgentStep, QueryAnswer } from "@/types";
 import { AgentTrace } from "./agent-trace";
@@ -22,14 +23,31 @@ interface Turn {
 
 export function AssistantView() {
   const params = useSearchParams();
-  const initialDoc = demoDocuments.find((d) => d.id === params.get("doc"));
-  const [scope, setScope] = useState<string[]>(initialDoc ? [initialDoc.title] : []);
+  // "Ask this contract" (?doc=<id>) limits questions to that contract.
+  const [scope, setScope] = useState<{ id: string; title: string }[]>([]);
+  const docParam = params.get("doc");
+  useEffect(() => {
+    if (!docParam) return;
+    let live = true;
+    documentService
+      .title(docParam)
+      .then((title) => live && setScope([{ id: docParam, title }]))
+      .catch(() => live && setScope([{ id: docParam, title: "Selected contract" }]));
+    return () => {
+      live = false;
+    };
+  }, [docParam]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [active, setActive] = useState<number | null>(null);
   const [focusTurn, setFocusTurn] = useState(0);
   const busy = turns.some((t) => !t.answer && !t.error);
-  const asked = useRef(false);
+  const lastAskedQ = useRef<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const answerRefs = useRef(new Map<number, HTMLElement>());
+  const scrolledTo = useRef(-1);
+
+  const scopeIds = useRef<string[]>([]);
+  scopeIds.current = scope.map((s) => s.id);
 
   const ask = useCallback(async (question: string) => {
     const index = turns.length;
@@ -50,7 +68,7 @@ export function AssistantView() {
     }, 300);
 
     try {
-      const answer = await queryService.ask({ question, documentIds: [] });
+      const answer = await queryService.ask({ question, documentIds: scopeIds.current });
       setTurns((t) => t.map((turn, i) => (i === index ? { ...turn, answer } : turn)));
       setActive(answer.citations[0]?.index ?? null);
     } catch (err) {
@@ -61,15 +79,32 @@ export function AssistantView() {
     }
   }, [turns.length]);
 
+  // A question passed in the address (?q=…, e.g. from the top bar) is asked
+  // once per distinct question, including while already on this page.
   useEffect(() => {
     const q = params.get("q");
-    if (q && !asked.current) {
-      asked.current = true;
+    if (q && q !== lastAskedQ.current) {
+      lastAskedQ.current = q;
       void ask(q);
     }
   }, [params, ask]);
 
-  useEffect(() => bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [turns]);
+  // While a question runs, keep its progress in view; when the answer (or an
+  // error) arrives, scroll so the answer's first line is visible. The
+  // sticky question box at the bottom must never cover it.
+  useEffect(() => {
+    const index = turns.length - 1;
+    const last = turns[index];
+    if (!last) return;
+    if (last.answer || last.error) {
+      if (scrolledTo.current !== index) {
+        scrolledTo.current = index;
+        answerRefs.current.get(index)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    } else {
+      bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [turns]);
 
   const focused = turns[focusTurn]?.answer ?? null;
 
@@ -104,7 +139,13 @@ export function AssistantView() {
               <div className="flex justify-end">
                 <p className="max-w-[85%] rounded-2xl rounded-br-md bg-rail px-4 py-2.5 text-[14.5px] text-rail-ink dark:bg-rail-2 dark:ring-1 dark:ring-line">{turn.question}</p>
               </div>
-              <div className="space-y-3">
+              <div
+                className="scroll-mt-20 space-y-3"
+                ref={(el) => {
+                  if (el) answerRefs.current.set(i, el);
+                  else answerRefs.current.delete(i);
+                }}
+              >
                 <AgentTrace steps={turn.answer?.steps ?? turn.liveSteps} live={!turn.answer && !turn.error} />
                 {turn.error && <ErrorState error={turn.error} onRetry={() => void ask(turn.question)} />}
                 {turn.answer && (
@@ -120,11 +161,17 @@ export function AssistantView() {
               </div>
             </article>
           ))}
-          <div ref={bottom} />
+          {/* scroll-mb: room for the sticky question box below */}
+          <div ref={bottom} className="scroll-mb-44" />
         </div>
 
         <div className="sticky bottom-4 z-10">
-          <Composer disabled={busy} scope={scope} onClearScope={(s) => setScope((list) => list.filter((x) => x !== s))} onSubmit={(q) => void ask(q)} />
+          <Composer
+            disabled={busy}
+            scope={scope.map((s) => s.title)}
+            onClearScope={(title) => setScope((list) => list.filter((x) => x.title !== title))}
+            onSubmit={(q) => void ask(q)}
+          />
         </div>
       </div>
 

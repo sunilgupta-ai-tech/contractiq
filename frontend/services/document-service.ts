@@ -97,6 +97,13 @@ export const documentService = {
     return toDocument(result.document);
   },
 
+  /** A document's title only (for labels); never triggers contract analysis. */
+  async title(id: string): Promise<string> {
+    if (config.useDemoData) return demoDocuments.find((d) => d.id === id)?.title ?? "Selected contract";
+    const doc = await apiRequest<ApiDocument>(`/documents/${encodeURIComponent(id)}`);
+    return doc.title;
+  },
+
   /** Upload a new version of an existing document (processed like any upload). */
   async uploadVersion(documentId: string, file: File): Promise<ContractDocument> {
     const form = new FormData();
