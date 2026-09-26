@@ -89,9 +89,9 @@ export function LoginForm() {
 
   return (
     <div className="animate-fade-up">
-      <div className="rounded-2xl border border-line bg-surface/90 p-7 shadow-lift backdrop-blur sm:p-8">
-        <div className="mb-6">
-          <span className="mb-4 grid h-10 w-10 place-items-center rounded-xl bg-brand-soft text-brand-ink ring-1 ring-brand/20">
+      <div className="rounded-2xl border border-line bg-surface/90 p-6 shadow-lift backdrop-blur sm:p-8">
+        <div className="mb-5">
+          <span className="mb-3.5 grid h-10 w-10 place-items-center rounded-xl bg-brand-soft text-brand-ink ring-1 ring-brand/20">
             {mode === "signin" ? <KeyRound className="h-5 w-5" /> : <Building2 className="h-5 w-5" />}
           </span>
           <h1 className="display text-[26px] leading-tight">{copy.title}</h1>
@@ -99,7 +99,7 @@ export function LoginForm() {
         </div>
 
         {!config.useDemoData && (
-          <div role="tablist" aria-label="Account" className="mb-6 grid grid-cols-2 gap-1 rounded-xl bg-sunken p-1">
+          <div role="tablist" aria-label="Account" className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-sunken p-1">
             {(["signin", "register"] as const).map((m) => (
               <button
                 key={m}

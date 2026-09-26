@@ -87,6 +87,16 @@
   :focus-visible {
     @apply outline-none ring-2 ring-brand/60 ring-offset-2 ring-offset-canvas;
   }
+
+  /* Browser autofill (saved passwords) paints its own light background and
+     text colour, which breaks dark mode; keep the field's own colours. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: rgb(var(--ink));
+    caret-color: rgb(var(--ink));
+    transition: background-color 600000s 0s, color 600000s 0s;
+  }
 }
 
 @layer components {
