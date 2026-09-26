@@ -4,18 +4,38 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { hasSession } from "@/lib/api-client";
+import { useStaleBuildGuard } from "@/hooks/use-stale-build-guard";
 import { config } from "@/lib/config";
+import { isStaleBuildError, reloadOnce } from "@/lib/stale-build";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false);
   const router = useRouter();
+  useStaleBuildGuard();
 
   // With the real API, the workspace needs a signed-in user.
   useEffect(() => {
     if (!config.useDemoData && !hasSession()) router.replace("/login");
   }, [router]);
+
+  // Code that fails to load outside a render (e.g. prefetching the next page)
+  // after a new build was deployed: reload once to pick up the new build.
+  useEffect(() => {
+    const onRejection = (event: PromiseRejectionEvent) => {
+      if (isStaleBuildError(event.reason)) reloadOnce();
+    };
+    const onError = (event: ErrorEvent) => {
+      if (isStaleBuildError(event.error)) reloadOnce();
+    };
+    window.addEventListener("unhandledrejection", onRejection);
+    window.addEventListener("error", onError);
+    return () => {
+      window.removeEventListener("unhandledrejection", onRejection);
+      window.removeEventListener("error", onError);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen">

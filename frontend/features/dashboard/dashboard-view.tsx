@@ -10,12 +10,14 @@ import { KeyDates } from "./key-dates";
 import { KpiRow, computeKpis } from "./kpi-row";
 import { ProcessingQueue } from "./processing-queue";
 import { RiskExposure } from "./risk-exposure";
+import { useMe } from "@/lib/session";
 
 function greeting(hour = new Date().getHours()) {
   return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 }
 
 export function DashboardView() {
+  const me = useMe();
   const { data, error, loading, reload } = useAsync(
     () => Promise.all([documentService.list(), analysisService.riskFindings(), documentService.keyDates()]),
     [],
@@ -24,8 +26,8 @@ export function DashboardView() {
   return (
     <>
       <PageHeader
-        eyebrow="Acme Legal · Overview"
-        title={`${greeting()}, Sunil`}
+        eyebrow={me ? `${me.organization} · Overview` : "Overview"}
+        title={me ? `${greeting()}, ${me.name.split(" ")[0]}` : greeting()}
         description="Portfolio health across your contracts: what's being processed, what's risky, and which deadlines are close."
       />
       {error && <ErrorState error={error} onRetry={reload} />}
