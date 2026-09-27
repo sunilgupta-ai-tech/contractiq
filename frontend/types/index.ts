@@ -82,6 +82,9 @@ export interface ContractDocument {
   visibility: "ORGANIZATION" | "RESTRICTED";
   /** Phase 20: passages in the latest version that read like instructions to an AI. */
   injectionFlags: number;
+  /** Phase 21: the recovered text may be unreliable; a person should check it. */
+  needsReview: boolean;
+  reviewReasons: string[];
   status: DocumentStatus;
   progress: number; // 0-100 while processing
   pages: number;

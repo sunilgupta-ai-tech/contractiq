@@ -38,8 +38,13 @@ from app.core.logging import get_logger
 from app.document_processing.images import image_png_bytes, select_images
 from app.document_processing.layout import classify_blocks
 from app.document_processing.ocr import tesseract_version
-from app.document_processing.parser import ParsedDocument, TooManyPagesError
-from app.document_processing.pdfplumber_parser import extract_tables
+from app.document_processing.parser import (
+    CorruptPdfError,
+    ParsedDocument,
+    ParsedPage,
+    TooManyPagesError,
+)
+from app.document_processing.pdfplumber_parser import extract_tables, extract_text_pages
 from app.document_processing.pymupdf_parser import (
     ImageOnPage,
     document_metadata,
@@ -103,7 +108,12 @@ def parse_pdf(data: bytes, options: PdfOptions) -> ParseResult:
     images: list[ExtractedImage] = []
     seen_xrefs: set[int] = set()
 
-    with open_pdf(data) as doc:
+    try:
+        doc = open_pdf(data)
+    except CorruptPdfError:
+        # Phase 21 fallback: a second parser for files MuPDF rejects.
+        return _fallback_parse(data, options)
+    with doc:
         # Checked before reading any page, so a 50,000-page file fails in
         # milliseconds instead of occupying a worker for an hour.
         if doc.page_count > options.max_pages:
@@ -111,7 +121,25 @@ def parse_pdf(data: bytes, options: PdfOptions) -> ParseResult:
                 f"The PDF has {doc.page_count} pages; the limit is {options.max_pages}."
             )
         for index, page in enumerate(doc):
-            parsed, found = extract_page(page, index + 1)
+            try:
+                parsed, found = extract_page(page, index + 1)
+            except Exception as exc:  # noqa: BLE001 — one bad page must not fail the document
+                # Phase 21: a page whose text layer cannot be read (broken
+                # fonts, odd content streams) is OCR'd from its image instead.
+                logger.warning(
+                    "page_text_unreadable", extra={"page": index + 1, "error": repr(exc)}
+                )
+                warnings.append(
+                    f"Page {index + 1}: the text layer could not be read; the page was OCR'd."
+                )
+                rect = page.rect
+                parsed = ParsedPage(
+                    number=index + 1,
+                    width=round(rect.width, 2),
+                    height=round(rect.height, 2),
+                    is_scanned=True,
+                )
+                found = []
             pages.append(parsed)
             selected = select_images(
                 found,
@@ -144,6 +172,28 @@ def parse_pdf(data: bytes, options: PdfOptions) -> ParseResult:
         warnings.append("Tables could not be extracted; table text is kept as plain text.")
 
     return ParseResult(ParsedDocument(pages=pages, metadata=metadata), images, warnings)
+
+
+def _fallback_parse(data: bytes, options: PdfOptions) -> ParseResult:
+    try:
+        pages = extract_text_pages(data)
+    except Exception as exc:  # noqa: BLE001 — both parsers failed: the file is unusable
+        raise CorruptPdfError() from exc
+    if not pages:
+        raise CorruptPdfError("The PDF has no pages.")
+    if len(pages) > options.max_pages:
+        raise TooManyPagesError(
+            f"The PDF has {len(pages)} pages; the limit is {options.max_pages}."
+        )
+    logger.warning("pdf_fallback_parser", extra={"pages": len(pages)})
+    return ParseResult(
+        ParsedDocument(pages=pages, metadata={"parser": "pdfplumber-fallback"}),
+        [],
+        [
+            "The PDF is damaged; its text was recovered with a fallback reader "
+            "(images and tables may be missing)."
+        ],
+    )
 
 
 def finalize_layout(document: ParsedDocument) -> None:

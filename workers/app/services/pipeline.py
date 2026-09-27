@@ -324,6 +324,11 @@ async def _describe(ctx: StageContext) -> None:
     metadata = ctx.version_updates.get("extraction_metadata")
     if metadata is not None:
         metadata["multimodal"] = asdict(result.stats)
+        metadata["review"] = review_needed(
+            parsed,
+            transcribed=set(transcription.transcribed_pages),
+            min_confidence=ctx.resources.settings.transcribe_below_ocr_confidence,
+        )
         metadata["transcribed_pages"] = transcription.transcribed_pages
         metadata["transcription"] = asdict(transcription.stats)
         metadata["warnings"] = (
@@ -368,6 +373,35 @@ async def _chunk(ctx: StageContext) -> None:
             parent_chunks=len(result.parents),
             injection=injection_report(c.text for c in result.children),
         )
+
+
+def review_needed(
+    parsed: ParsedDocument, *, transcribed: set[int], min_confidence: float
+) -> dict[str, Any]:
+    """Phase 21: should a person check this document's text?
+
+    Yes when the recovered text may be wrong or missing: scanned pages whose
+    OCR stayed weak (not transcribed by the vision model — disabled, over the
+    per-document cap, or failed), scanned pages with no text at all, or a
+    PDF only the fallback reader could open. The document is still indexed;
+    the flag only tells people to double-check answers from it.
+    """
+    weak, empty = [], []
+    for page in parsed.pages:
+        if not page.is_scanned or page.number in transcribed:
+            continue
+        if not any(b.text.strip() for b in page.blocks):
+            empty.append(page.number)
+        elif is_weak_ocr(page, min_confidence=min_confidence):
+            weak.append(page.number)
+    reasons = []
+    if weak:
+        reasons.append("low_ocr_confidence")
+    if empty:
+        reasons.append("no_text_found")
+    if parsed.metadata.get("parser") == "pdfplumber-fallback":
+        reasons.append("damaged_pdf_recovered")
+    return {"required": bool(reasons), "reasons": reasons, "pages": sorted(weak + empty)}
 
 
 def injection_report(texts: Iterable[str]) -> dict[str, Any]:

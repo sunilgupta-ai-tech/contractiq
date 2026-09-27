@@ -4,7 +4,7 @@ from app.core.config import LLMProviderName, Settings
 from app.llm.base import EmbeddingConfigError, EmbeddingProvider, LLMConfigError, LLMProvider
 
 
-def create_llm(settings: Settings) -> LLMProvider:
+def create_llm(settings: Settings, *, model: str | None = None) -> LLMProvider:
     """The answer-generation model chosen by LLM_PROVIDER (gemini | ollama).
 
     Raises LLMConfigError if Gemini is selected without a key.
@@ -16,14 +16,14 @@ def create_llm(settings: Settings) -> LLMProvider:
 
         return GeminiProvider(
             settings.gemini_api_key.get_secret_value(),
-            settings.gemini_model,
+            model or settings.gemini_model,
             timeout_s=settings.llm_timeout_s,
             thinking_budget=settings.gemini_thinking_budget,
         )
     from app.llm.ollama import OllamaProvider
 
     return OllamaProvider(
-        settings.ollama_base_url, settings.ollama_model, timeout_s=settings.llm_timeout_s
+        settings.ollama_base_url, model or settings.ollama_model, timeout_s=settings.llm_timeout_s
     )
 
 

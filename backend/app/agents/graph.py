@@ -146,13 +146,20 @@ def step_limit(max_retries: int) -> int:
 
 class AgentRunner:
     def __init__(
-        self, retriever: Retriever, reranker: Reranker, llm: LLMProvider, settings: Settings
+        self,
+        retriever: Retriever,
+        reranker: Reranker,
+        llm: LLMProvider,
+        settings: Settings,
+        *,
+        planner_llm: LLMProvider | None = None,
     ) -> None:
         self.settings = settings
         deps = AgentDeps(
             tools=build_tools(retriever, settings.agent_max_tool_calls),
             reranker=reranker,
             llm=llm,
+            planner_llm=planner_llm,
             settings=settings,
         )
         self.llm = llm

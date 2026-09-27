@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     Enum,
@@ -108,6 +109,11 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    # Phase 21: set by the worker when the recovered text may be unreliable
+    # (weak OCR, empty scanned pages, damaged PDF); cleared by a person.
+    needs_review: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     visibility: Mapped[DocumentVisibility] = mapped_column(
         Enum(DocumentVisibility, name="document_visibility"),
         default=DocumentVisibility.ORGANIZATION,
@@ -164,6 +170,12 @@ class DocumentVersion(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="versions")
+
+    @property
+    def review_reasons(self) -> list[str]:
+        """Why the text may need checking (Phase 21), e.g. low_ocr_confidence."""
+        review = (self.extraction_metadata or {}).get("review") or {}
+        return list(review.get("reasons") or [])
 
     @property
     def injection_flags(self) -> int:

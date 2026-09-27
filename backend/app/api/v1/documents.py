@@ -9,6 +9,7 @@ are rejected before a database session is opened.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Annotated
 
@@ -39,7 +40,7 @@ from app.schemas.document import (
 from app.services.document_service import (
     UploadMetadata,
     clean_filename,
-    read_limited,
+    spool_upload,
     validate_upload,
 )
 
@@ -74,23 +75,30 @@ async def upload_document(
     """Returns 202: the document is stored and queued; poll
     `/documents/{id}/status` for processing progress."""
     filename = clean_filename(file.filename)
-    data = await read_limited(file, settings.max_upload_size_bytes)
-    upload_format = validate_upload(filename, file.content_type, data)
-    result = await service.upload(
-        data=data,
-        filename=filename,
-        upload_format=upload_format,
-        metadata=UploadMetadata(
-            title=title or None,
-            contract_type=contract_type,
-            counterparty=counterparty or None,
-            document_id=document_id,
-            version_label=version_label or None,
-            visibility=visibility,
-        ),
-        actor_id=user.user_id,
-        meta=meta,
-    )
+    # Phase 21: streamed to a temporary file (hashed on the way), never held
+    # whole in memory; removed once stored.
+    spooled = await spool_upload(file, settings.max_upload_size_bytes)
+    try:
+        upload_format = await asyncio.to_thread(
+            validate_upload, filename, file.content_type, spooled.path
+        )
+        result = await service.upload(
+            data=spooled,
+            filename=filename,
+            upload_format=upload_format,
+            metadata=UploadMetadata(
+                title=title or None,
+                contract_type=contract_type,
+                counterparty=counterparty or None,
+                document_id=document_id,
+                version_label=version_label or None,
+                visibility=visibility,
+            ),
+            actor_id=user.user_id,
+            meta=meta,
+        )
+    finally:
+        spooled.discard()
     return ApiResponse(data=result)
 
 
@@ -114,6 +122,9 @@ async def list_documents(
         str | None, Query(max_length=200, description="Search title, counterparty, file name")
     ] = None,
     sort: Annotated[DocumentSort, Query()] = DocumentSort.NEWEST,
+    needs_review: Annotated[
+        bool | None, Query(description="Only documents flagged for review (Phase 21)")
+    ] = None,
 ) -> ApiResponse[Page[DocumentOut]]:
     return ApiResponse(
         data=await service.list(
@@ -124,6 +135,7 @@ async def list_documents(
             file_type=file_type,
             search=q,
             sort=sort,
+            needs_review=needs_review,
         )
     )
 
@@ -225,4 +237,20 @@ async def set_access(
         data=await service.set_access(
             document_id, body, permissions=user.permissions, actor_id=user.user_id, meta=meta
         )
+    )
+
+
+@router.post(
+    "/documents/{document_id}/reviewed",
+    summary="Mark a flagged document as checked by a person",
+    response_model=ApiResponse[DocumentOut],
+)
+async def mark_reviewed(
+    user: DocumentUploaderDep,
+    document_id: uuid.UUID,
+    service: DocumentServiceDep,
+    meta: RequestMetaDep,
+) -> ApiResponse[DocumentOut]:
+    return ApiResponse(
+        data=await service.mark_reviewed(document_id, actor_id=user.user_id, meta=meta)
     )

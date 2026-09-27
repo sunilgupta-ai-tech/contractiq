@@ -40,7 +40,7 @@ function analysisFor(id: string) {
 const ANALYSED_TYPES = new Set<FileType>(["PDF", "WORD"]);
 
 export type LibrarySort = "newest" | "oldest" | "name";
-export type LibraryStatus = "all" | "processing" | "ready" | "failed";
+export type LibraryStatus = "all" | "processing" | "ready" | "failed" | "review";
 
 export interface LibraryQuery {
   fileType: FileType | "ALL";
@@ -64,11 +64,13 @@ const STATUS_PARAMS: Record<LibraryStatus, DocumentStatus[]> = {
   processing: IN_PROGRESS,
   ready: ["COMPLETED"],
   failed: ["FAILED"],
+  review: [], // Phase 21: filtered by needs_review, not by status
 };
 
 function libraryParams(query: Pick<LibraryQuery, "status" | "q">): URLSearchParams {
   const params = new URLSearchParams();
   for (const s of STATUS_PARAMS[query.status]) params.append("status", s);
+  if (query.status === "review") params.set("needs_review", "true");
   if (query.q.trim()) params.set("q", query.q.trim());
   return params;
 }
@@ -77,6 +79,7 @@ function libraryParams(query: Pick<LibraryQuery, "status" | "q">): URLSearchPara
 function demoMatches(d: ContractDocument, query: Pick<LibraryQuery, "status" | "q">): boolean {
   const statusOk =
     query.status === "all" ||
+    (query.status === "review" && d.needsReview) ||
     (query.status === "processing" ? isProcessing(d.status) : STATUS_PARAMS[query.status].includes(d.status));
   const q = query.q.trim().toLowerCase();
   return statusOk && (!q || [d.title, d.counterparty, d.fileName].some((v) => v.toLowerCase().includes(q)));
@@ -242,6 +245,11 @@ export const documentService = {
     });
     onProgress?.(100);
     return toDocument(result.document);
+  },
+
+  /** Phase 21: a person checked a flagged document's text. */
+  async markReviewed(id: string): Promise<ContractDocument> {
+    return toDocument(await apiRequest<ApiDocument>(`/documents/${encodeURIComponent(id)}/reviewed`, { method: "POST" }));
   },
 
   /** A document's title only (for labels); never triggers contract analysis. */

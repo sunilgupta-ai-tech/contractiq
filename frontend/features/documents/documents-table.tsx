@@ -50,6 +50,7 @@ export function DocumentsTable({ docs }: { docs: ContractDocument[] }) {
               <td className="px-3 py-3.5">
                 <span className="flex flex-wrap items-center gap-1">
                   <Badge>{fileTypeLabel(doc)}</Badge>
+                  {doc.needsReview && <Badge tone="warn">Needs review</Badge>}
                   {doc.visibility === "RESTRICTED" && (
                     <Badge tone="warn">
                       <Lock className="h-3 w-3" /> Restricted

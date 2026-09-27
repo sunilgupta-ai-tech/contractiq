@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
-import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ShieldAlert, Upload } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ScanSearch, ShieldAlert, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -59,6 +59,16 @@ export function ContractDetailView({ id }: { id: string }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<ApiError | null>(null);
+
+  const [reviewed, setReviewed] = useState(false);
+  async function markReviewed() {
+    try {
+      await documentService.markReviewed(id);
+      setReviewed(true);
+    } catch (err) {
+      setUploadError(err instanceof ApiError ? err : new ApiError("Could not update the document.", "UNKNOWN", 0, null));
+    }
+  }
 
   async function uploadVersion(file: File) {
     setUploading(true);
@@ -130,6 +140,20 @@ export function ContractDetailView({ id }: { id: string }) {
       </div>
 
       {uploadError && <div className="mb-5"><ErrorState error={uploadError} /></div>}
+      {doc.needsReview && !reviewed && (
+        <div role="note" className="mb-5 flex flex-wrap items-start gap-3 rounded-xl border border-warn/30 bg-warn-soft px-4 py-3 text-[13px] text-ink">
+          <ScanSearch className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <span className="min-w-0 flex-1">
+            <strong>Check this document&apos;s text.</strong> {reviewText(doc.reviewReasons)} Answers from it may be incomplete until
+            someone compares it with the original.
+          </span>
+          {can(me, "document:upload") && (
+            <Button size="sm" variant="secondary" onClick={() => void markReviewed()}>
+              Mark reviewed
+            </Button>
+          )}
+        </div>
+      )}
       {doc.injectionFlags > 0 && (
         <div role="note" className="mb-5 flex items-start gap-2.5 rounded-xl border border-warn/30 bg-warn-soft px-4 py-3 text-[13px] text-ink">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
@@ -268,4 +292,15 @@ export function ContractDetailView({ id }: { id: string }) {
       </div>
     </>
   );
+}
+
+const REVIEW_REASONS: Record<string, string> = {
+  low_ocr_confidence: "Some scanned pages were hard to read.",
+  no_text_found: "Some scanned pages produced no text.",
+  damaged_pdf_recovered: "The PDF was damaged; its text was recovered with a fallback reader.",
+};
+
+/** Why a document needs a person to check it (Phase 21). */
+function reviewText(reasons: string[]): string {
+  return reasons.map((r) => REVIEW_REASONS[r] ?? r).join(" ");
 }

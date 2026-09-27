@@ -25,6 +25,10 @@ class S3ObjectStorage:
             kwargs["aws_access_key_id"] = settings.aws_access_key_id.get_secret_value()
             kwargs["aws_secret_access_key"] = settings.aws_secret_access_key.get_secret_value()
         self._client = boto3.client("s3", **kwargs)
+        # Phase 24: SSE-KMS with a customer-managed key when one is configured,
+        # otherwise S3-managed AES-256. Objects are always encrypted at rest.
+        self.kms_key_id = settings.aws_s3_kms_key_id or None
+        self.sse = "aws:kms" if self.kms_key_id else "AES256"
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         await asyncio.to_thread(
@@ -32,9 +36,25 @@ class S3ObjectStorage:
             Bucket=self.bucket,
             Key=key,
             Body=data,
-            ContentType=content_type,
-            ServerSideEncryption="AES256",
+            **self._extra_args(content_type),
         )
+
+    async def put_file(self, key: str, path: str, content_type: str) -> None:
+        # upload_file streams from disk and switches to multipart upload
+        # above 8 MB, so a 1 GB file never sits in memory.
+        await asyncio.to_thread(
+            self._client.upload_file,
+            path,
+            self.bucket,
+            key,
+            ExtraArgs=self._extra_args(content_type),
+        )
+
+    def _extra_args(self, content_type: str) -> dict[str, str]:
+        args = {"ContentType": content_type, "ServerSideEncryption": self.sse}
+        if self.kms_key_id:
+            args["SSEKMSKeyId"] = self.kms_key_id
+        return args
 
     async def get(self, key: str) -> bytes:
         try:

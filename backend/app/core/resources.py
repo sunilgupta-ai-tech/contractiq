@@ -21,6 +21,7 @@ from app.core.logging import get_logger
 from app.db.database import Database
 from app.llm.base import EmbeddingProvider, LLMProvider
 from app.llm.factory import create_embeddings, create_llm, create_vision
+from app.llm.resilient import CircuitBreaker, ResilientLLM
 from app.observability.llm_monitoring import MonitoredEmbeddings, MonitoredLLM
 from app.observability.tracing import Exporter, LangfuseExporter, build_exporter
 from app.queue import create_queue
@@ -43,6 +44,7 @@ class Resources:
     # GEMINI_API_KEY must not stop the API from booting in development.
     _embeddings: EmbeddingProvider | None = field(default=None, repr=False)
     _llm: LLMProvider | None = field(default=None, repr=False)
+    _light_llm: LLMProvider | None = field(default=None, repr=False)
     _vision: LLMProvider | None = field(default=None, repr=False)
     _tracer: Exporter | None = field(default=None, repr=False)
 
@@ -69,11 +71,37 @@ class Resources:
         Raises LLMConfigError if it is misconfigured (e.g. no API key).
         """
         if self._llm is None:
-            # Monitored (Phase 13): every call's tokens, latency and cost are recorded.
-            self._llm = MonitoredLLM(
-                create_llm(self.settings), role="llm", pricing=self.settings.llm_pricing
-            )
+            self._llm = self._resilient(None)
         return self._llm
+
+    def light_llm(self) -> LLMProvider:
+        """Phase 21 model routing: the lighter model for planning and query
+        rewriting (LLM_LIGHT_MODEL), or the answer model when none is set."""
+        if self._light_llm is None:
+            model = self.settings.llm_light_model
+            self._light_llm = self._resilient(model) if model else self.llm()
+        return self._light_llm
+
+    def _resilient(self, model: str | None) -> LLMProvider:
+        """Monitored (Phase 13: tokens, latency, cost) and resilient (Phase 21:
+        retry, fallback model, circuit breaker)."""
+        settings = self.settings
+
+        def monitored(name: str | None) -> LLMProvider:
+            return MonitoredLLM(
+                create_llm(settings, model=name), role="llm", pricing=settings.llm_pricing
+            )
+
+        return ResilientLLM(
+            monitored(model),
+            fallback=monitored(settings.llm_fallback_model)
+            if settings.llm_fallback_model
+            else None,
+            max_retries=settings.llm_max_retries,
+            breaker=CircuitBreaker(
+                threshold=settings.llm_breaker_threshold, cooldown_s=settings.llm_breaker_cooldown_s
+            ),
+        )
 
     def embeddings(self) -> EmbeddingProvider:
         """The configured embedding provider (one shared HTTP client per process).

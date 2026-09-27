@@ -35,6 +35,7 @@ class DocumentVersionOut(BaseModel):
     # Phase 20: passages that read like instructions to an AI. They are
     # treated as data regardless; the count is shown so people know.
     injection_flags: int = 0
+    review_reasons: list[str] = []
     created_at: datetime
 
 
@@ -46,6 +47,7 @@ class DocumentOut(BaseModel):
     contract_type: ContractType
     file_type: FileType
     visibility: DocumentVisibility
+    needs_review: bool
     counterparty: str | None
     status: DocumentStatus
     effective_date: date | None

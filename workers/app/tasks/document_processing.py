@@ -202,6 +202,9 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         )
         if is_latest:
             document.current_version_id = version.id
+            # Phase 21: flag documents whose text may be unreliable.
+            review = (version.extraction_metadata or {}).get("review") or {}
+            document.needs_review = bool(review.get("required"))
         await session.commit()
         logger.info("document_processed", extra={"job_id": job_id, "timings_ms": timings})
         _observe(timings, "completed")

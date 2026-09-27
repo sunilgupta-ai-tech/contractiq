@@ -26,6 +26,11 @@ class LocalObjectStorage:
         path.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(path.write_bytes, data)
 
+    async def put_file(self, key: str, path: str, content_type: str) -> None:
+        target = self._path(key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(shutil.copyfile, path, target)
+
     async def get(self, key: str) -> bytes:
         path = self._path(key)
         if not path.exists():

@@ -23,6 +23,8 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
@@ -89,19 +91,31 @@ def format_for_storage_key(storage_key: str) -> UploadFormat:
     return _BY_EXTENSION.get(extension_of(storage_key), _BY_EXTENSION["pdf"])
 
 
-def detect_format(filename: str, data: bytes) -> UploadFormat:
-    """The upload's format, checked against its content.
+def _source(data: bytes | Path) -> tuple[bytes, int, Any]:
+    """(first bytes, size, something zipfile/Pillow can open) for bytes or a
+    file on disk — large uploads are checked without loading them (Phase 21)."""
+    if isinstance(data, Path):
+        with data.open("rb") as handle:
+            head = handle.read(16)
+        return head, data.stat().st_size, data
+    return data[:16], len(data), io.BytesIO(data)
+
+
+def detect_format(filename: str, data: bytes | Path) -> UploadFormat:
+    """The upload's format, checked against its content (bytes, or the
+    path of the spooled upload).
 
     Raises InvalidFileError with a message the user can act on."""
+    head, size, source = _source(data)
     ext = extension_of(filename)
     if ext in _LEGACY:
         raise InvalidFileError(_LEGACY[ext])
     fmt = _BY_EXTENSION.get(ext)
     if fmt is None:
         raise InvalidFileError(f"This file type is not supported. {SUPPORTED_HINT}")
-    if not data:
+    if not size:
         raise InvalidFileError("The file is empty.")
-    if data.startswith(_OLE_MAGIC):
+    if head.startswith(_OLE_MAGIC):
         # Legacy Office binaries and password-protected .docx/.xlsx both
         # use the OLE container; neither can be read without the password
         # or a converter.
@@ -111,21 +125,21 @@ def detect_format(filename: str, data: bytes) -> UploadFormat:
         )
 
     if fmt.file_type is FileType.PDF:
-        if not data.startswith(b"%PDF-"):
+        if not head.startswith(b"%PDF-"):
             raise InvalidFileError("The file is not a valid PDF.")
     elif fmt.file_type is FileType.IMAGE:
-        _check_image(data, fmt)
+        _check_image(head, source, fmt)
     else:
-        _check_ooxml(data, fmt)
+        _check_ooxml(head, source, fmt)
     return fmt
 
 
-def _check_image(data: bytes, fmt: UploadFormat) -> None:
+def _check_image(head: bytes, source: Any, fmt: UploadFormat) -> None:
     expected = {"png": b"\x89PNG\r\n\x1a\n", "jpg": b"\xff\xd8\xff"}[fmt.extension]
-    if not data.startswith(expected):
+    if not head.startswith(expected):
         raise InvalidFileError(f"The file is not a valid {fmt.extension.upper()} image.")
     try:
-        with Image.open(io.BytesIO(data)) as image:
+        with Image.open(source) as image:
             width, height = image.size
             if width * height > MAX_IMAGE_PIXELS:
                 raise InvalidFileError("The image is too large (more than 80 megapixels).")
@@ -134,12 +148,12 @@ def _check_image(data: bytes, fmt: UploadFormat) -> None:
         raise InvalidFileError("The image is damaged or could not be read.") from exc
 
 
-def _check_ooxml(data: bytes, fmt: UploadFormat) -> None:
+def _check_ooxml(head: bytes, source: Any, fmt: UploadFormat) -> None:
     label = "Word" if fmt.file_type is FileType.WORD else "Excel"
-    if not data.startswith(_ZIP_MAGIC):
+    if not head.startswith(_ZIP_MAGIC):
         raise InvalidFileError(f"The file is not a valid {label} (.{fmt.extension}) document.")
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        with zipfile.ZipFile(source) as archive:
             entries = archive.infolist()
     except zipfile.BadZipFile as exc:
         raise InvalidFileError(f"The {label} file is damaged.") from exc

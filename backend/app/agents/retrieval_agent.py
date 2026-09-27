@@ -162,7 +162,7 @@ async def refine(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     errors: list[str] = []
     for query in (state.get("queries") or [])[:2]:
         try:
-            result = await deps.llm.generate(
+            result = await deps.planner.generate(
                 [ChatMessage(role="user", content=REFINE_PROMPT.format(query=query))],
                 temperature=0.2,  # a little variety: we want *different* wording
                 max_tokens=200,

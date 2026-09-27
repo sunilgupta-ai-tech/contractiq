@@ -80,6 +80,11 @@ ANSWER_GROUNDEDNESS = Histogram(
     "Groundedness score of generated answers (0-1).",
     buckets=(0.1, 0.25, 0.5, 0.75, 0.9, 1.0),
 )
+ANSWER_CACHE = Counter(
+    "contractiq_answer_cache_total",
+    "Answer cache lookups (Phase 21): hit = answered without a model call.",
+    ["result"],
+)
 LLM_CALLS = Counter(
     "contractiq_llm_calls_total",
     "Model calls by outcome (ok, error, config_error, blocked).",

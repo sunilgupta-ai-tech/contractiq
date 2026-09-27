@@ -20,13 +20,15 @@ involved and none share a transaction:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
+import tempfile
 import unicodedata
 import uuid
 from collections.abc import Collection
 from dataclasses import dataclass
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from fastapi import UploadFile
@@ -118,6 +120,44 @@ _READ_CHUNK = 1024 * 1024
 # --- Validation (pure functions, unit-tested) ------------------------------------
 
 
+@dataclass
+class SpooledUpload:
+    """An upload written to a temporary file (Phase 21): its path, size and
+    SHA-256, computed while streaming, so the API never holds the whole file
+    in memory. Delete it with `discard()` when done."""
+
+    path: Path
+    size: int
+    sha256: str
+
+    def discard(self) -> None:
+        self.path.unlink(missing_ok=True)
+
+
+async def spool_upload(upload: UploadFile, max_bytes: int) -> SpooledUpload:
+    """Stream the upload to a temporary file, hashing as it goes, and stop
+    as soon as it exceeds the limit."""
+    digest = hashlib.sha256()
+    size = 0
+    handle = tempfile.NamedTemporaryFile(prefix="upload-", delete=False)  # noqa: SIM115
+    path = Path(handle.name)
+    try:
+        with handle:
+            while chunk := await upload.read(_READ_CHUNK):
+                size += len(chunk)
+                if size > max_bytes:
+                    raise FileTooLargeError(
+                        f"The file exceeds the {max_bytes // (1024 * 1024)} MB limit.",
+                        details={"max_bytes": max_bytes},
+                    )
+                digest.update(chunk)
+                await asyncio.to_thread(handle.write, chunk)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return SpooledUpload(path=path, size=size, sha256=digest.hexdigest())
+
+
 async def read_limited(upload: UploadFile, max_bytes: int) -> bytes:
     """Read the upload in chunks and stop as soon as it exceeds the limit."""
     chunks: list[bytes] = []
@@ -153,7 +193,7 @@ def validate_pdf(filename: str, content_type: str | None, data: bytes) -> None:
         raise InvalidFileError("The file is not a valid PDF.")
 
 
-def validate_upload(filename: str, content_type: str | None, data: bytes) -> UploadFormat:
+def validate_upload(filename: str, content_type: str | None, data: bytes | Path) -> UploadFormat:
     """Phase 16: PDF, JPG/PNG, .docx or .xlsx, recognised from the content
     (app/document_processing/formats.py). Returns the detected format."""
     declared = (content_type or "").split(";")[0].strip().lower()
@@ -196,6 +236,7 @@ def to_document_out(document: Document) -> DocumentOut:
         contract_type=document.contract_type,
         file_type=document.file_type,
         visibility=document.visibility,
+        needs_review=document.needs_review,
         counterparty=document.counterparty,
         status=document.status,
         effective_date=document.effective_date,
@@ -242,7 +283,7 @@ class DocumentService:
     async def upload(
         self,
         *,
-        data: bytes,
+        data: bytes | SpooledUpload,
         filename: str,
         metadata: UploadMetadata,
         actor_id: uuid.UUID,
@@ -250,16 +291,19 @@ class DocumentService:
         upload_format: UploadFormat | None = None,
     ) -> UploadResult:
         fmt = upload_format or format_for_storage_key(STORED_FILENAME)
+        size = data.size if isinstance(data, SpooledUpload) else len(data)
         # Duplicates first (Phase 19): a copy of an existing file is not
         # stored, processed or embedded again, and must not be reported as
         # a plan limit either.
-        sha256 = hashlib.sha256(data).hexdigest()
+        sha256 = (
+            data.sha256 if isinstance(data, SpooledUpload) else hashlib.sha256(data).hexdigest()
+        )
         await self._reject_duplicate(sha256)
         await ensure_can_upload(
             self.session,
             self.tenant_id,
             new_document=metadata.document_id is None,
-            size_bytes=len(data),
+            size_bytes=size,
         )
 
         if metadata.document_id is not None:
@@ -292,7 +336,10 @@ class DocumentService:
             str(self.tenant_id), str(document.id), str(version_id), fmt.stored_filename
         )
         try:
-            await self.resources.storage.put(key, data, fmt.mime_type)
+            if isinstance(data, SpooledUpload):
+                await self.resources.storage.put_file(key, str(data.path), fmt.mime_type)
+            else:
+                await self.resources.storage.put(key, data, fmt.mime_type)
         except Exception as exc:
             await self.session.rollback()
             raise ServiceUnavailableError(
@@ -309,7 +356,7 @@ class DocumentService:
                     original_filename=filename,
                     storage_key=key,
                     mime_type=fmt.mime_type,
-                    size_bytes=len(data),
+                    size_bytes=size,
                     sha256=sha256,
                     status=DocumentStatus.QUEUED,
                     extraction_metadata={},
@@ -338,7 +385,7 @@ class DocumentService:
                 metadata={
                     "version_id": str(version.id),
                     "version_number": version_number,
-                    "size_bytes": len(data),
+                    "size_bytes": size,
                     "sha256": sha256,
                 },
             )
@@ -387,6 +434,7 @@ class DocumentService:
         file_type: FileType | None = None,
         search: str | None = None,
         sort: DocumentSort = DocumentSort.NEWEST,
+        needs_review: bool | None = None,
     ) -> Page[DocumentOut]:
         rows, total = await self.documents.search(
             offset=offset,
@@ -396,6 +444,7 @@ class DocumentService:
             file_type=file_type,
             search=search,
             sort=sort,
+            needs_review=needs_review,
         )
         return Page(
             items=[to_document_out(d) for d in rows], total=total, offset=offset, limit=limit
@@ -445,6 +494,24 @@ class DocumentService:
             error_message=latest.error_message if latest else None,
             job=JobOut.model_validate(job) if job else None,
         )
+
+    async def mark_reviewed(
+        self, document_id: uuid.UUID, *, actor_id: uuid.UUID, meta: RequestMeta
+    ) -> DocumentOut:
+        """Phase 21: a person checked the text of a flagged document."""
+        document = await self.documents.get_with_versions(document_id)
+        document.needs_review = False
+        record_audit(
+            self.session,
+            tenant_id=self.tenant_id,
+            actor_user_id=actor_id,
+            action="document.reviewed",
+            resource_type="document",
+            resource_id=document.id,
+            meta=meta,
+        )
+        await self.session.commit()
+        return to_document_out(await self.documents.get_with_versions(document_id))
 
     async def get_job(self, job_id: uuid.UUID) -> JobOut:
         job = await self.jobs.get(job_id)

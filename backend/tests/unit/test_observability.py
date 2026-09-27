@@ -21,6 +21,7 @@ from app.core.config import LLMProviderName, Settings
 from app.core.resources import Resources
 from app.guardrails.evidence_validator import UNVERIFIED_MESSAGE, GroundingReport
 from app.llm.base import ChatMessage, LLMBlockedError, LLMConfigError, LLMError
+from app.llm.resilient import ResilientLLM
 from app.observability.llm_monitoring import (
     MonitoredEmbeddings,
     MonitoredLLM,
@@ -308,7 +309,12 @@ async def test_resources_hand_out_monitored_providers(tmp_path):
         )
     )
     try:
-        assert isinstance(resources.llm(), MonitoredLLM) and resources.llm().role == "llm"
+        # Phase 21: the answer model is resilient (retry, fallback, breaker)
+        # around a monitored provider.
+        llm = resources.llm()
+        assert isinstance(llm, ResilientLLM)
+        assert isinstance(llm.primary, MonitoredLLM) and llm.primary.role == "llm"
+        assert resources.light_llm() is llm  # no LLM_LIGHT_MODEL: one model
         assert isinstance(resources.vision(), MonitoredLLM) and resources.vision().role == "vision"
         assert isinstance(resources.embeddings(), MonitoredEmbeddings)
         assert resources.llm().model == "llama3.1:8b"

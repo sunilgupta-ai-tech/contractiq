@@ -43,9 +43,11 @@ from app.db.repositories.document_repository import (
 )
 from app.guardrails.evidence_validator import UNVERIFIED_MESSAGE, should_withhold
 from app.llm.base import EmbeddingConfigError, EmbeddingError, LLMConfigError, LLMError
+from app.observability import metrics
 from app.observability.llm_monitoring import record_answer
 from app.observability.tracing import end_trace, export_in_background, start_trace
 from app.rag.pipelines.qa import QAPipeline, RagAnswer
+from app.rag.prompts.system import PROMPT_VERSION
 from app.schemas.query import (
     AgentInfo,
     CitationOut,
@@ -55,6 +57,7 @@ from app.schemas.query import (
     UnsupportedClaimOut,
     UsageOut,
 )
+from app.services import answer_cache
 from app.services.reranking_service import reranker_for
 from app.services.retrieval_service import RetrievalService
 
@@ -229,9 +232,8 @@ class QueryService:
         try:
             # Building the components is where configuration problems show up
             # (missing key, unknown RERANKER) — reported as "not configured".
-            hidden = await DocumentRepository(
-                self.session, self.tenant_id, access=self.access
-            ).hidden_ids()
+            documents = DocumentRepository(self.session, self.tenant_id, access=self.access)
+            hidden = await documents.hidden_ids()
             retriever = RetrievalService(self.resources, hidden_document_ids=hidden)
             reranker = reranker_for(settings)
             llm = self.resources.llm()
@@ -242,10 +244,32 @@ class QueryService:
         tenant_id = str(self.tenant_id)
         document_ids = [str(d) for d in request.document_ids] or None
         version_ids = [str(v) for v in request.version_ids] or None
+
+        # Phase 21: a first question already answered over the same documents
+        # (and the same visible set) is served from the cache, at no cost.
+        cache_key: str | None = None
+        if not history and settings.answer_cache_ttl_s > 0:
+            cache_key = answer_cache.cache_key(
+                tenant_id,
+                question=request.question,
+                mode=self._mode(request),
+                document_ids=document_ids or [],
+                version_ids=version_ids or [],
+                hidden_document_ids=hidden,
+                corpus_version=await documents.corpus_version(),
+                prompt_version=PROMPT_VERSION,
+                model=llm.model,
+            )
+            if (cached := await answer_cache.get(self.resources.redis, cache_key)) is not None:
+                metrics.ANSWER_CACHE.labels(result="hit").inc()
+                return cached
+            metrics.ANSWER_CACHE.labels(result="miss").inc()
         try:
             if self._mode(request) == "agent":
-                agent = _agent_runner()(retriever, reranker, llm, settings)
-                return await agent.answer(
+                agent = _agent_runner()(
+                    retriever, reranker, llm, settings, planner_llm=self.resources.light_llm()
+                )
+                result = await agent.answer(
                     request.question,
                     tenant_id=tenant_id,
                     permissions=self.permissions,
@@ -253,14 +277,15 @@ class QueryService:
                     version_ids=version_ids,
                     history=history,
                 )
-            pipeline = QAPipeline(retriever, reranker, llm, settings)
-            return await pipeline.answer(
-                request.question,
-                tenant_id=tenant_id,
-                document_ids=document_ids,
-                version_ids=version_ids,
-                history=history,
-            )
+            else:
+                pipeline = QAPipeline(retriever, reranker, llm, settings)
+                result = await pipeline.answer(
+                    request.question,
+                    tenant_id=tenant_id,
+                    document_ids=document_ids,
+                    version_ids=version_ids,
+                    history=history,
+                )
         except (EmbeddingConfigError, LLMConfigError) as exc:  # e.g. key rejected by provider
             raise ServiceUnavailableError(NOT_CONFIGURED, internal_detail=repr(exc)) from exc
         except (
@@ -271,6 +296,12 @@ class QueryService:
             ResponseHandlingException,
         ) as exc:
             raise ServiceUnavailableError(UNAVAILABLE, internal_detail=repr(exc)) from exc
+        # Only answers that found evidence and saw nothing suspicious are reused.
+        if cache_key and not result.insufficient_evidence and not result.injection_flags:
+            await answer_cache.put(
+                self.resources.redis, cache_key, result, settings.answer_cache_ttl_s
+            )
+        return result
 
 
 def _response(

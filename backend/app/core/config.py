@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000"]
     )
+    # Phase 21: uploads stream to disk and storage, never whole into memory,
+    # so large files (e.g. 1024 MB) are fine for the API. The worker still
+    # holds one document's bytes while parsing: size its memory accordingly.
     max_upload_size_mb: int = 50
 
     # --- PostgreSQL ---
@@ -83,6 +86,8 @@ class Settings(BaseSettings):
     local_storage_path: str = "/data/storage"
     aws_region: str | None = None
     aws_s3_bucket: str | None = None
+    # Phase 24: customer-managed KMS key for SSE-KMS; empty = S3-managed AES-256.
+    aws_s3_kms_key_id: str | None = None
     aws_access_key_id: SecretStr | None = None
     aws_secret_access_key: SecretStr | None = None
 
@@ -157,6 +162,21 @@ class Settings(BaseSettings):
     gemini_thinking_budget: int | None = None
     llm_timeout_s: float = 60.0
     llm_max_output_tokens: int = 1024
+    # --- Resilience and cost (Phase 21) ---
+    # Retries of temporary model errors (429, 5xx, timeout), then one call to
+    # LLM_FALLBACK_MODEL (same provider) if set. After LLM_BREAKER_THRESHOLD
+    # consecutive failures the primary model is paused for the cooldown.
+    llm_max_retries: int = 2
+    llm_fallback_model: str | None = None
+    llm_breaker_threshold: int = 5
+    llm_breaker_cooldown_s: float = 30.0
+    # Model routing: planning and query rewriting (short, frequent calls) go
+    # to this lighter model, e.g. gemini-2.5-flash-lite; answers keep
+    # GEMINI_MODEL. Empty = one model for everything.
+    llm_light_model: str | None = None
+    # Answer cache: identical questions over unchanged documents are answered
+    # from Redis, per organization and per set of visible documents. 0 = off.
+    answer_cache_ttl_s: int = 6 * 3600
 
     # --- Retrieval & answering (Phase 7) ---
     # Candidates fetched by each search (dense and keyword) before fusion.

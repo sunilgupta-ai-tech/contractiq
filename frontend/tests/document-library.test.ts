@@ -85,6 +85,14 @@ describe("library requests", () => {
     expect([page.total, page.items[0]!.fileType]).toEqual([120, "IMAGE"]);
   });
 
+  it("asks for flagged documents on the Needs review filter (Phase 21)", async () => {
+    const { documentService, apiRequest } = await service({ items: [], total: 0 });
+    await documentService.library({ fileType: "ALL", status: "review", q: "", sort: "newest", offset: 0, limit: 50 });
+    const url = new URL(apiRequest.mock.calls[0]![0] as string, "http://x");
+    expect(url.searchParams.get("needs_review")).toBe("true");
+    expect(url.searchParams.getAll("status")).toEqual([]);
+  });
+
   it("asks for every type on the All tab and fills missing counts", async () => {
     const { documentService, apiRequest } = await service({ all: 3, by_file_type: { PDF: 2, EXCEL: 1 } });
     const counts = await documentService.libraryCounts({ status: "all", q: "" });

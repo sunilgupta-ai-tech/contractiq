@@ -35,6 +35,7 @@ const STATUSES: { key: LibraryStatus; label: string }[] = [
   { key: "processing", label: "Processing" },
   { key: "ready", label: "Ready" },
   { key: "failed", label: "Failed" },
+  { key: "review", label: "Needs review" },
 ];
 
 const SORTS: { key: LibrarySort; label: string }[] = [

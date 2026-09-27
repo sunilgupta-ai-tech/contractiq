@@ -59,6 +59,12 @@ class AgentDeps:
     reranker: Reranker
     llm: LLMProvider
     settings: Settings
+    # Phase 21 model routing: planning/rewriting may use a lighter model.
+    planner_llm: LLMProvider | None = None
+
+    @property
+    def planner(self) -> LLMProvider:
+        return self.planner_llm or self.llm
 
 
 def needs_planning(question: str, history: list[tuple[str, str]]) -> bool:
@@ -85,7 +91,7 @@ async def understand(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     plan: dict[str, Any] | None = None
     errors: list[str] = []
     try:
-        result = await deps.llm.generate(
+        result = await deps.planner.generate(
             [
                 ChatMessage(role="system", content=UNDERSTAND_PROMPT),
                 ChatMessage(role="user", content=_planning_input(question, history)),

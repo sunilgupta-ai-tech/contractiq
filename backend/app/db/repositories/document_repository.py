@@ -103,6 +103,18 @@ class DocumentRepository(TenantScopedRepository[Document]):
         stmt = select(Document.id).where(Document.organization_id == self.tenant_id, ~condition)
         return [str(i) for i in (await self.session.execute(stmt)).scalars()]
 
+    async def corpus_version(self) -> str:
+        """Changes whenever any document of the tenant is added, processed,
+        changed or removed (Phase 21 answer cache)."""
+        count, latest = (
+            await self.session.execute(
+                select(func.count(), func.max(Document.updated_at)).where(
+                    Document.organization_id == self.tenant_id
+                )
+            )
+        ).one()
+        return f"{count}:{latest.isoformat() if latest else '-'}"
+
     async def is_visible(self, document_id: uuid.UUID) -> bool:
         stmt = select(func.count()).select_from(
             self._scoped().where(Document.id == document_id).subquery()
@@ -116,8 +128,11 @@ class DocumentRepository(TenantScopedRepository[Document]):
         contract_type: ContractType | None = None,
         file_type: FileType | None = None,
         search: str | None = None,
+        needs_review: bool | None = None,
     ) -> Select[tuple[Document]]:
         stmt = self._scoped()
+        if needs_review is not None:
+            stmt = stmt.where(Document.needs_review.is_(needs_review))
         if isinstance(status, DocumentStatus):
             stmt = stmt.where(Document.status == status)
         elif status:  # any of several, e.g. every in-progress pipeline stage
@@ -171,10 +186,15 @@ class DocumentRepository(TenantScopedRepository[Document]):
         file_type: FileType | None = None,
         search: str | None = None,
         sort: DocumentSort = DocumentSort.NEWEST,
+        needs_review: bool | None = None,
     ) -> tuple[Sequence[Document], int]:
         """A page of documents (with versions loaded) and the total match count."""
         stmt = self._filtered(
-            status=status, contract_type=contract_type, file_type=file_type, search=search
+            status=status,
+            contract_type=contract_type,
+            file_type=file_type,
+            search=search,
+            needs_review=needs_review,
         )
         total = (
             await self.session.execute(select(func.count()).select_from(stmt.subquery()))
