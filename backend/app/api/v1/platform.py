@@ -28,6 +28,7 @@ from app.schemas.auth import LoginRequest, RefreshRequest, TokenPair
 from app.schemas.common import ApiResponse, Page
 from app.schemas.platform import (
     CreatePlatformAdminRequest,
+    DeleteOrganizationRequest,
     OrganizationDetail,
     OrganizationSummary,
     PlanOut,
@@ -161,6 +162,27 @@ async def update_organization(
     return ApiResponse(
         data=await service.update_organization(org_id, body, actor_id=admin.admin_id, meta=meta)
     )
+
+
+@router.delete(
+    "/organizations/{org_id}",
+    summary="Delete an organization and erase all its data",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_class=Response,
+)
+async def delete_organization(
+    admin: SuperAdminDep,
+    org_id: uuid.UUID,
+    body: DeleteOrganizationRequest,
+    service: PlatformServiceDep,
+    meta: RequestMetaDep,
+) -> Response:
+    """Access ends immediately; vectors, files, caches and rows are erased in
+    the background. Body: {"confirm_name": "<exact organization name>"}."""
+    await service.delete_organization(
+        org_id, confirm_name=body.confirm_name, actor_id=admin.admin_id, meta=meta
+    )
+    return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.patch(

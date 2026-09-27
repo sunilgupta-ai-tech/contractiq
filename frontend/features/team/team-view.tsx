@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Loader2, Lock, Pencil, Plus, ShieldCheck, Trash2, UserPlus, UsersRound, X } from "lucide-react";
+import { Check, Copy, Link2, Loader2, Lock, Mail, Pencil, Plus, ShieldCheck, Trash2, UserPlus, UsersRound, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { useAsync } from "@/hooks/use-async";
 import { ApiError } from "@/lib/api-client";
 import { config } from "@/lib/config";
 import { can, useMe, type Me } from "@/lib/session";
-import { teamService, type RoleInput } from "@/services/team-service";
+import { invitationService, teamService, type RoleInput } from "@/services/team-service";
 import type { Permission, PermissionInfo, RoleDef, TeamMember } from "@/types";
 import { cn } from "@/utils/cn";
 import { relativeTime } from "@/utils/format";
@@ -129,6 +129,7 @@ function MembersTab({
     <div className="space-y-4">
       {error && <ErrorState error={error} />}
       {members.error && <ErrorState error={members.error} onRetry={members.reload} />}
+      <InvitationsCard roles={assignable} />
       {adding && (
         <AddMemberForm
           roles={assignable}
@@ -301,6 +302,101 @@ function AddMemberForm({ roles, onCancel, onAdded }: { roles: RoleDef[]; onCance
           </Button>
         </div>
       </form>
+    </Card>
+  );
+}
+
+// --- Invitations (Phase 22) ----------------------------------------------------------------
+
+function InvitationsCard({ roles }: { roles: RoleDef[] }) {
+  const pending = useAsync(() => invitationService.pending(), []);
+  const viewer = roles.find((r) => r.isSystem && r.name === "Viewer") ?? roles[0];
+  const [email, setEmail] = useState("");
+  const [roleId, setRoleId] = useState("");
+  const [link, setLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  async function invite(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setCopied(false);
+    try {
+      const created = await invitationService.create(email, roleId || viewer?.id || "");
+      setLink(created.link);
+      setEmail("");
+      pending.reload();
+    } catch (err) {
+      setError(asApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(id: string) {
+    try {
+      await invitationService.revoke(id);
+      pending.reload();
+    } catch (err) {
+      setError(asApiError(err));
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Invite by link" eyebrow="Invitations" />
+      <form onSubmit={invite} className="flex flex-wrap items-end gap-3 p-5">
+        <label className="min-w-[220px] flex-1">
+          <span className="mb-1.5 block text-[13px] font-medium text-ink">Work email</span>
+          <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} placeholder="new.colleague@company.com" />
+        </label>
+        <label className="w-44">
+          <span className="mb-1.5 block text-[13px] font-medium text-ink">Role</span>
+          <select value={roleId || viewer?.id || ""} onChange={(e) => setRoleId(e.target.value)} className={inputClass}>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button type="submit" disabled={busy}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />} Create link
+        </Button>
+      </form>
+      {error && <div className="px-5 pb-4"><ErrorState error={error} /></div>}
+      {link && (
+        <div className="mx-5 mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand-soft px-3 py-2 text-[12.5px]">
+          <Link2 className="h-4 w-4 text-brand" />
+          <code className="min-w-0 flex-1 truncate font-mono text-ink">{link}</code>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              void navigator.clipboard.writeText(link).then(() => setCopied(true));
+            }}
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? "Copied" : "Copy"}
+          </Button>
+          <p className="w-full text-2xs text-ink-3">Share it privately. It works once and expires in 7 days; this is the only time it is shown.</p>
+        </div>
+      )}
+      {(pending.data?.length ?? 0) > 0 && (
+        <ul className="divide-y divide-line border-t border-line">
+          {pending.data!.map((i) => (
+            <li key={i.id} className="flex items-center gap-3 px-5 py-2.5 text-[13px]">
+              <span className="min-w-0 flex-1 truncate text-ink">{i.email}</span>
+              <Badge>{i.roleName}</Badge>
+              <span className="text-2xs text-ink-3">expires {relativeTime(i.expiresAt)}</span>
+              <Button size="sm" variant="ghost" onClick={() => void revoke(i.id)}>
+                Revoke
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

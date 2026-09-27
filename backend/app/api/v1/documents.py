@@ -12,8 +12,10 @@ from __future__ import annotations
 import asyncio
 import uuid
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Query, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import (
     DocumentDeleterDep,
@@ -253,4 +255,33 @@ async def mark_reviewed(
 ) -> ApiResponse[DocumentOut]:
     return ApiResponse(
         data=await service.mark_reviewed(document_id, actor_id=user.user_id, meta=meta)
+    )
+
+
+@router.get(
+    "/documents/{document_id}/versions/{version_id}/download",
+    summary="Download a version's original file (audited)",
+    response_class=StreamingResponse,
+)
+async def download_version(
+    user: DocumentReaderDep,
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    service: DocumentServiceDep,
+    meta: RequestMetaDep,
+) -> StreamingResponse:
+    version, chunks = await service.download(
+        document_id, version_id, actor_id=user.user_id, meta=meta
+    )
+    # The stored name is ours; the user's file name is only offered as the
+    # download name, quoted and ASCII-safe (RFC 6266 filename*).
+    name = quote(version.original_filename)
+    return StreamingResponse(
+        chunks,
+        media_type=version.mime_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{name}",
+            "Content-Length": str(version.size_bytes),
+            "X-Content-Type-Options": "nosniff",
+        },
     )

@@ -1,17 +1,20 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    audit,
     auth,
     comparison,
     contracts,
     documents,
     health,
+    invitations,
     jobs,
     platform,
     query,
     risk,
     roles,
     summaries,
+    usage,
     users,
 )
 
@@ -21,6 +24,8 @@ for module in (
     auth,
     users,
     roles,
+    invitations,
+    audit,
     documents,
     jobs,
     platform,
@@ -29,5 +34,6 @@ for module in (
     comparison,
     risk,
     summaries,
+    usage,
 ):
     api_router.include_router(module.router)

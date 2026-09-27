@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from typing import Any
 
 import boto3
@@ -62,6 +63,18 @@ class S3ObjectStorage:
         except ClientError as exc:
             raise NotFoundError("Stored object not found.") from exc
         return await asyncio.to_thread(obj["Body"].read)
+
+    async def stream(self, key: str) -> AsyncIterator[bytes]:
+        try:
+            obj = await asyncio.to_thread(self._client.get_object, Bucket=self.bucket, Key=key)
+        except ClientError as exc:
+            raise NotFoundError("Stored object not found.") from exc
+        body = obj["Body"]
+        try:
+            while chunk := await asyncio.to_thread(body.read, 1024 * 1024):
+                yield chunk
+        finally:
+            body.close()
 
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self._client.delete_object, Bucket=self.bucket, Key=key)

@@ -10,8 +10,16 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.db.models import FileType, OrganizationStatus, Plan, PlatformRole
 from app.schemas.auth import Email, FullName, NewPassword
+from app.schemas.usage import UsagePeriodOut
 
 Limit = Annotated[int, Field(ge=0, le=100_000_000)]
+LIMIT_FIELDS = (
+    "max_users",
+    "max_documents",
+    "max_storage_mb",
+    "max_ai_queries_month",
+    "max_ai_tokens_month",
+)
 
 
 class PlatformAdminOut(BaseModel):
@@ -42,6 +50,8 @@ class LimitsOut(BaseModel):
     max_users: int | None
     max_documents: int | None
     max_storage_mb: int | None
+    max_ai_queries_month: int | None = None
+    max_ai_tokens_month: int | None = None
 
 
 class UsageOut(BaseModel):
@@ -81,6 +91,7 @@ class OrganizationDetail(OrganizationSummary):
     documents_by_type: dict[FileType, int]
     failed_documents: int
     members: list[OrganizationMember]
+    ai_usage_this_month: UsagePeriodOut
 
 
 class UpdateOrganizationRequest(BaseModel):
@@ -93,12 +104,14 @@ class UpdateOrganizationRequest(BaseModel):
     max_users: Limit | None = None
     max_documents: Limit | None = None
     max_storage_mb: Limit | None = None
+    max_ai_queries_month: Limit | None = None
+    max_ai_tokens_month: Annotated[int, Field(ge=0, le=10**13)] | None = None
     # Explicitly clear a limit (unlimited). Listed names are set to NULL.
     unlimited: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check(self) -> UpdateOrganizationRequest:
-        allowed = {"max_users", "max_documents", "max_storage_mb"}
+        allowed = set(LIMIT_FIELDS)
         if set(self.unlimited) - allowed:
             raise ValueError(f"unlimited may only name {sorted(allowed)}")
         if (
@@ -107,6 +120,12 @@ class UpdateOrganizationRequest(BaseModel):
         ):
             raise ValueError("Give a reason when suspending an organization.")
         return self
+
+
+class DeleteOrganizationRequest(BaseModel):
+    """Type the organization's exact name to confirm (Phase 22)."""
+
+    confirm_name: Annotated[str, Field(min_length=1, max_length=200)]
 
 
 class UpdateMemberRequest(BaseModel):

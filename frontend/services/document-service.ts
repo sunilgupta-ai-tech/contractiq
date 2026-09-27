@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api-client";
+import { ApiError, apiRequest, getAccessToken, refreshSession } from "@/lib/api-client";
 import {
   toDetail,
   toDocument,
@@ -245,6 +245,20 @@ export const documentService = {
     });
     onProgress?.(100);
     return toDocument(result.document);
+  },
+
+  /** Phase 22: download a version's original file (audited by the API). */
+  async download(documentId: string, versionId: string, filename: string): Promise<void> {
+    const url = `${config.apiBaseUrl}${config.apiPrefix}/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}/download`;
+    const get = () => fetch(url, { headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` } });
+    let response = await get();
+    if (response.status === 401 && (await refreshSession())) response = await get();
+    if (!response.ok) throw new ApiError("The file could not be downloaded.", "DOWNLOAD_FAILED", response.status, null);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
   },
 
   /** Phase 21: a person checked a flagged document's text. */

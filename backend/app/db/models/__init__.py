@@ -12,10 +12,12 @@ from app.db.models.document import (
     FileType,
 )
 from app.db.models.evaluation import EvaluationRun
+from app.db.models.invitation import Invitation
 from app.db.models.job import JobStatus, JobType, ProcessingJob
 from app.db.models.organization import Organization, OrganizationStatus, Plan
 from app.db.models.platform import PlatformAdmin, PlatformAuditLog, PlatformRole
 from app.db.models.role import SYSTEM_ROLE_IDS, Role
+from app.db.models.usage import UsageCounter
 from app.db.models.user import User
 
 __all__ = [
@@ -29,6 +31,7 @@ __all__ = [
     "DocumentVersion",
     "EvaluationRun",
     "FileType",
+    "Invitation",
     "JobStatus",
     "JobType",
     "Message",
@@ -42,5 +45,6 @@ __all__ = [
     "ProcessingJob",
     "Role",
     "SYSTEM_ROLE_IDS",
+    "UsageCounter",
     "User",
 ]

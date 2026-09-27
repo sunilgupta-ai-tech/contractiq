@@ -35,6 +35,7 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
+from app.chunking.tokens import estimate_tokens
 from app.core.logging import get_logger
 from app.llm.base import (
     ChatMessage,
@@ -48,6 +49,7 @@ from app.llm.base import (
 )
 from app.observability import metrics
 from app.observability.tracing import record_generation
+from app.services import usage
 
 if TYPE_CHECKING:
     from app.rag.pipelines.qa import RagAnswer
@@ -112,6 +114,8 @@ class MonitoredLLM:
         metrics.LLM_LATENCY.labels(**labels).observe(seconds)
         prompt = result.prompt_tokens if result else None
         completion = result.completion_tokens if result else None
+        if result is not None:
+            usage.add_llm(prompt, completion)  # Phase 22: the organization's AI usage
         if prompt:
             metrics.LLM_TOKENS.labels(**labels, kind="prompt").inc(prompt)
         if completion:
@@ -160,7 +164,9 @@ class MonitoredEmbeddings:
     ) -> list[list[float]]:
         started = time.perf_counter()
         try:
-            return await self.inner.embed(texts, task=task)
+            vectors = await self.inner.embed(texts, task=task)
+            usage.add_embedding(sum(estimate_tokens(t) for t in texts))
+            return vectors
         finally:
             labels = {"provider": self.name, "model": self.model}
             metrics.EMBEDDING_TEXTS.labels(**labels).inc(len(texts))

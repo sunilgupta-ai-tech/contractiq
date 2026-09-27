@@ -7,6 +7,7 @@ STORAGE_BACKEND. Services depend on `ObjectStorage`, never on boto3.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Protocol
 
 
@@ -18,6 +19,11 @@ class ObjectStorage(Protocol):
         ...
 
     async def get(self, key: str) -> bytes: ...
+    def stream(self, key: str) -> AsyncIterator[bytes]:
+        """The object in chunks, for downloads that must not load a large
+        file into memory (Phase 22)."""
+        ...
+
     async def delete(self, key: str) -> None: ...
     async def exists(self, key: str) -> bool: ...
     async def delete_prefix(self, prefix: str) -> None:

@@ -102,7 +102,7 @@ export function OrganizationsView() {
                       </Link>
                     </td>
                     <td className="px-3 py-3">
-                      <Badge tone={org.status === "ACTIVE" ? "ok" : "danger"}>{org.status === "ACTIVE" ? "Active" : "Suspended"}</Badge>
+                      <Badge tone={org.status === "ACTIVE" ? "ok" : "danger"}>{org.status === "ACTIVE" ? "Active" : org.status === "DELETING" ? "Deleting" : "Suspended"}</Badge>
                     </td>
                     <td className="px-3 py-3">
                       <Badge tone="brand">{org.plan}</Badge>

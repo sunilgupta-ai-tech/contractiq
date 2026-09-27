@@ -18,12 +18,18 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from arq.connections import ArqRedis
 from redis.asyncio import Redis
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.core.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from app.core.security import hash_password
 from app.core.sessions import revoke_org_sessions, revoke_platform_sessions, revoke_user_sessions
 from app.db.models import (
@@ -39,8 +45,10 @@ from app.db.models import (
     Role,
     User,
 )
+from app.queue import enqueue_organization_deletion
 from app.schemas.common import Page
 from app.schemas.platform import (
+    LIMIT_FIELDS,
     CreatePlatformAdminRequest,
     LimitsOut,
     OrganizationDetail,
@@ -54,9 +62,11 @@ from app.schemas.platform import (
     UpdatePlatformAdminRequest,
     UsageOut,
 )
+from app.schemas.usage import UsagePeriodOut
 from app.services.audit_service import RequestMeta
 from app.services.plans import PLAN_LIMITS, apply_plan
 from app.services.platform_auth_service import platform_audit
+from app.services.usage import current_period, month_usage
 
 
 def _escape_like(term: str) -> str:
@@ -64,16 +74,22 @@ def _escape_like(term: str) -> str:
 
 
 def _limits(org: Organization) -> LimitsOut:
-    return LimitsOut(
-        max_users=org.max_users, max_documents=org.max_documents, max_storage_mb=org.max_storage_mb
-    )
+    return LimitsOut(**{field: getattr(org, field) for field in LIMIT_FIELDS})
 
 
 class PlatformService:
-    def __init__(self, session: AsyncSession, *, redis: Redis | None, revoke_ttl_s: int) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        redis: Redis | None,
+        revoke_ttl_s: int,
+        queue: ArqRedis | None = None,
+    ) -> None:
         self.session = session
         self.redis = redis
         self.revoke_ttl_s = revoke_ttl_s
+        self.queue = queue
 
     # --- Overview ---------------------------------------------------------------
 
@@ -134,11 +150,7 @@ class PlatformService:
         return [
             PlanOut(
                 plan=plan,
-                limits=LimitsOut(
-                    max_users=limits.max_users,
-                    max_documents=limits.max_documents,
-                    max_storage_mb=limits.max_storage_mb,
-                ),
+                limits=LimitsOut(**{field: getattr(limits, field) for field in LIMIT_FIELDS}),
             )
             for plan, limits in PLAN_LIMITS.items()
         ]
@@ -290,6 +302,9 @@ class PlatformService:
             suspended_at=org.suspended_at,
             documents_by_type={t: by_type.get(t, 0) for t in FileType},
             failed_documents=int(failed or 0),
+            ai_usage_this_month=UsagePeriodOut.model_validate(used)
+            if (used := await month_usage(self.session, org_id))
+            else UsagePeriodOut(period=current_period()),
             members=[
                 OrganizationMember(
                     id=u.id,
@@ -332,7 +347,7 @@ class PlatformService:
             org.suspended_reason = data.suspended_reason.strip()
         if data.plan is not None:
             apply_plan(org, data.plan)
-        for field in ("max_users", "max_documents", "max_storage_mb"):
+        for field in LIMIT_FIELDS:
             value = getattr(data, field)
             if value is not None:
                 setattr(org, field, value)
@@ -357,6 +372,35 @@ class PlatformService:
             # Everyone in the organization is signed out at once.
             await revoke_org_sessions(self.redis, org.id, ttl_s=self.revoke_ttl_s)
         return await self.get_organization(org.id)
+
+    async def delete_organization(
+        self, org_id: uuid.UUID, *, confirm_name: str, actor_id: uuid.UUID, meta: RequestMeta
+    ) -> None:
+        """Phase 22: end all access now and erase everything in the background
+        (vectors, files, caches, then every row). Irreversible."""
+        org = await self.session.get(Organization, org_id)
+        if org is None:
+            raise NotFoundError("Organization not found.")
+        if confirm_name.strip() != org.name:
+            raise ConflictError("Type the organization's exact name to confirm deletion.")
+        org.status = OrganizationStatus.DELETING
+        org.suspended_reason = "Deletion requested"
+        org.suspended_at = datetime.now(UTC)
+        platform_audit(
+            self.session,
+            actor_id=actor_id,
+            action="organization.delete_requested",
+            meta=meta,
+            target_type="organization",
+            target_id=org.id,
+            organization_id=org.id,
+            details={"name": org.name},
+        )
+        await self.session.commit()
+        await revoke_org_sessions(self.redis, org.id, ttl_s=self.revoke_ttl_s)
+        if self.queue is None:
+            raise ServiceUnavailableError("The deletion could not be queued. Try again.")
+        await enqueue_organization_deletion(self.queue, str(org.id))
 
     async def set_member_active(
         self,

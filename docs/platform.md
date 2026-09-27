@@ -80,6 +80,7 @@ The Audit log page lists them newest first.
 | GET | `/platform/me`, `/overview`, `/plans` | any |
 | GET | `/platform/organizations` (`q` also matches a member's email, `status`, `plan`, paging), `/organizations/{id}` | any |
 | PATCH | `/platform/organizations/{id}` (status + reason, plan, limits, `unlimited`) | SUPER_ADMIN |
+| DELETE | `/platform/organizations/{id}` (`confirm_name`) — Phase 22: access ends now, data erased in the background ([saas.md](saas.md)) | SUPER_ADMIN |
 | PATCH | `/platform/organizations/{id}/members/{user_id}` (`is_active`) | SUPER_ADMIN |
 | GET / POST / PATCH | `/platform/admins`, `/admins/{id}` | SUPER_ADMIN |
 | GET | `/platform/audit` (`organization_id`, paging) | any |

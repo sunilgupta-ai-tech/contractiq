@@ -17,6 +17,11 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | PATCH | `/users/{id}` | 2, 17 | live — `user:manage`; name, `role_id`, active status (not your own role/status, not a user with more access than you); revokes that user's tokens at once |
 | * | `/platform/...` | 18 | live — platform console, separate sign-in and token audience; see [platform.md](platform.md) |
 | POST | `/documents/{id}/reviewed` | 21 | live — clear the "needs review" flag (`document:upload`); `GET /documents?needs_review=true` lists flagged documents |
+| GET | `/documents/{id}/versions/{version_id}/download` | 22 | live — streamed original file, audited (`document.download`) |
+| POST / GET / DELETE | `/invitations`, `/invitations/{id}` | 22 | live — `user:manage`; create returns the link token once |
+| GET / POST | `/auth/invitations/{token}`, `/auth/invitations/{token}/accept` | 22 | live — public: preview, then set a password and sign in |
+| GET | `/usage` | 22 | live — `user:manage`; plan, limits, current usage, AI usage by month |
+| GET | `/audit-logs` | 22 | live — `user:manage`; `action` (exact or prefix like `document.`), `actor_id`, paging |
 | GET / PUT | `/documents/{id}/access` | 20 | live — who can see a document: `visibility` (`ORGANIZATION`/`RESTRICTED`), `user_ids`, `role_ids`; PUT needs `document:share` or being the uploader |
 | GET | `/documents/directory` | 20 | live — active colleagues and roles to share with |
 | GET | `/permissions` | 17 | live — the permission catalog (key, group, label, description) |

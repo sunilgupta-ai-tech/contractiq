@@ -134,6 +134,8 @@ class Settings(BaseSettings):
     # Plan given to organizations that sign up themselves (FREE, STARTER,
     # BUSINESS, ENTERPRISE); the platform admin can change it later.
     default_plan: Literal["FREE", "STARTER", "BUSINESS", "ENTERPRISE"] = "FREE"
+    # Phase 22: how long an invitation link works.
+    invitation_ttl_days: int = 7
 
     # --- Word, Excel and image uploads (worker, Phase 16) ---
     # Bounds the work (and embedding cost) of a huge workbook.

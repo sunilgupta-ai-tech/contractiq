@@ -26,7 +26,7 @@ import re
 import tempfile
 import unicodedata
 import uuid
-from collections.abc import Collection
+from collections.abc import AsyncIterator, Collection
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
@@ -494,6 +494,32 @@ class DocumentService:
             error_message=latest.error_message if latest else None,
             job=JobOut.model_validate(job) if job else None,
         )
+
+    async def download(
+        self,
+        document_id: uuid.UUID,
+        version_id: uuid.UUID,
+        *,
+        actor_id: uuid.UUID,
+        meta: RequestMeta,
+    ) -> tuple[DocumentVersion, AsyncIterator[bytes]]:
+        """Phase 22: the original file of a version the caller can see,
+        streamed; every download is audited."""
+        version = await self.versions.get(version_id)  # visibility-scoped
+        if version.document_id != document_id:
+            raise NotFoundError("Version not found.")
+        record_audit(
+            self.session,
+            tenant_id=self.tenant_id,
+            actor_user_id=actor_id,
+            action="document.download",
+            resource_type="document",
+            resource_id=document_id,
+            meta=meta,
+            metadata={"version_id": str(version.id), "size_bytes": version.size_bytes},
+        )
+        await self.session.commit()
+        return version, self.resources.storage.stream(version.storage_key)
 
     async def mark_reviewed(
         self, document_id: uuid.UUID, *, actor_id: uuid.UUID, meta: RequestMeta

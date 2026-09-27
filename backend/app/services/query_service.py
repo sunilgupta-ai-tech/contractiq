@@ -57,7 +57,8 @@ from app.schemas.query import (
     UnsupportedClaimOut,
     UsageOut,
 )
-from app.services import answer_cache
+from app.services import answer_cache, usage
+from app.services.audit_service import RequestMeta, record_audit
 from app.services.reranking_service import reranker_for
 from app.services.retrieval_service import RetrievalService
 
@@ -98,7 +99,9 @@ class QueryService:
         permissions: frozenset[Permission],
         resources: Resources,
         access: DocumentAccess,
+        meta: RequestMeta | None = None,
     ) -> None:
+        self.meta = meta or RequestMeta()
         self.session = session
         self.access = access  # Phase 20: which of the tenant's documents are visible
         self.tenant_id = tenant_id
@@ -111,6 +114,8 @@ class QueryService:
     async def ask(self, request: QueryRequest) -> QueryResponse:
         started = time.perf_counter()
         await self._validate_scope(request)
+        # Phase 22: the month's AI allowance (plan) before any model call.
+        await usage.ensure_ai_allowance(self.session, self.tenant_id)
         conversation = await self._conversation(request)
         history = await self.messages.recent_turns(
             conversation.id, self.resources.settings.conversation_history_turns
@@ -129,7 +134,8 @@ class QueryService:
         if capture:
             trace.input = request.question
         try:
-            result = self._apply_grounding_policy(await self._run_pipeline(request, history))
+            with usage.start_tally() as tally:
+                result = self._apply_grounding_policy(await self._run_pipeline(request, history))
         except Exception:
             trace.metadata["outcome"] = "error"
             self._finish_trace()
@@ -172,6 +178,24 @@ class QueryService:
             latency_ms=latency_ms,
         )
         self.session.add(assistant)
+        await usage.record(self.session, self.tenant_id, tally, queries=1)
+        # Phase 22 audit: who asked, where, over what — not the question
+        # itself (it stays in the user's private conversation).
+        record_audit(
+            self.session,
+            tenant_id=self.tenant_id,
+            actor_user_id=self.user_id,
+            action="query.run",
+            resource_type="conversation",
+            resource_id=conversation.id,
+            meta=self.meta,
+            metadata={
+                "mode": mode,
+                "documents": len(request.document_ids),
+                "outcome": outcome,
+                "tokens": tally.prompt_tokens + tally.completion_tokens,
+            },
+        )
         await self.session.commit()
         return _response(request, conversation.id, assistant.id, result, latency_ms, mode)
 

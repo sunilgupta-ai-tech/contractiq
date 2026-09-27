@@ -11,8 +11,9 @@ from redis.asyncio import Redis
 from sqlalchemy import delete, select
 
 from app.core.config import Settings
+from app.core.security import hash_password
 from app.db.database import Database
-from app.db.models import Organization, User
+from app.db.models import Organization, PlatformAdmin, PlatformAuditLog, PlatformRole, User
 from app.main import create_app
 
 PASSWORD = "correct horse battery staple"
@@ -69,3 +70,41 @@ def register(api: TestClient, cleanup: list[str], org: str) -> tuple[dict, str]:
 
 def auth(tokens: dict) -> dict[str, str]:
     return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+
+@pytest.fixture
+async def platform_admins() -> AsyncIterator[dict[PlatformRole, str]]:
+    """One SUPER_ADMIN and one SUPPORT admin; emails by role. Removed after."""
+    db = Database(Settings())
+    emails = {
+        role: f"pa-{role.value.lower()}-{uuid.uuid4().hex[:8]}@docunexa.test"
+        for role in PlatformRole
+    }
+    async with db.session_factory() as s:
+        for role, email in emails.items():
+            s.add(
+                PlatformAdmin(
+                    email=email,
+                    full_name=role.value,
+                    password_hash=hash_password(PASSWORD),
+                    role=role,
+                )
+            )
+        await s.commit()
+    yield emails
+    async with db.session_factory() as s:
+        ids = [
+            a.id
+            for a in (
+                await s.execute(
+                    PlatformAdmin.__table__.select().where(
+                        PlatformAdmin.email.in_(list(emails.values()))
+                        | PlatformAdmin.email.like("pa-new-%")
+                    )
+                )
+            ).all()
+        ]
+        await s.execute(delete(PlatformAuditLog).where(PlatformAuditLog.actor_id.in_(ids)))
+        await s.execute(delete(PlatformAdmin).where(PlatformAdmin.id.in_(ids)))
+        await s.commit()
+    await db.dispose()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from app.core.exceptions import NotFoundError
@@ -36,6 +37,14 @@ class LocalObjectStorage:
         if not path.exists():
             raise NotFoundError("Stored object not found.")
         return await asyncio.to_thread(path.read_bytes)
+
+    async def stream(self, key: str) -> AsyncIterator[bytes]:
+        path = self._path(key)
+        if not path.exists():
+            raise NotFoundError("Stored object not found.")
+        with path.open("rb") as handle:
+            while chunk := await asyncio.to_thread(handle.read, 1024 * 1024):
+                yield chunk
 
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self._path(key).unlink, missing_ok=True)

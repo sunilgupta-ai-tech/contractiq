@@ -105,3 +105,49 @@ export const teamService = {
     await apiRequest<null>(`/roles/${encodeURIComponent(id)}`, { method: "DELETE" });
   },
 };
+
+// --- Invitations (Phase 22) -------------------------------------------------------------
+
+export interface Invitation {
+  id: string;
+  email: string;
+  roleName: string;
+  expiresAt: string;
+}
+
+interface ApiInvitation {
+  id: string;
+  email: string;
+  role_name: string;
+  expires_at: string;
+  token?: string;
+}
+
+const toInvitation = (i: ApiInvitation): Invitation => ({ id: i.id, email: i.email, roleName: i.role_name, expiresAt: i.expires_at });
+
+export const invitationService = {
+  /** Returns the invitation and the link to share (the token is shown only once). */
+  async create(email: string, roleId: string): Promise<{ invitation: Invitation; link: string }> {
+    const created = await apiRequest<ApiInvitation>("/invitations", { method: "POST", body: { email, role_id: roleId } });
+    const origin = typeof window === "undefined" ? "" : window.location.origin;
+    return { invitation: toInvitation(created), link: `${origin}/invite/${created.token}` };
+  },
+  async pending(): Promise<Invitation[]> {
+    return (await apiRequest<ApiInvitation[]>("/invitations")).map(toInvitation);
+  },
+  async revoke(id: string): Promise<void> {
+    await apiRequest<null>(`/invitations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  async preview(token: string): Promise<{ email: string; organizationName: string; roleName: string }> {
+    const p = await apiRequest<{ email: string; organization_name: string; role_name: string }>(
+      `/auth/invitations/${encodeURIComponent(token)}`,
+    );
+    return { email: p.email, organizationName: p.organization_name, roleName: p.role_name };
+  },
+  async accept(token: string, fullName: string, password: string): Promise<{ access_token: string; refresh_token: string }> {
+    return apiRequest(`/auth/invitations/${encodeURIComponent(token)}/accept`, {
+      method: "POST",
+      body: { full_name: fullName, password },
+    });
+  },
+};

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Ban, CheckCircle2, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle2, Loader2, Save, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -19,6 +19,8 @@ const LIMIT_FIELDS: { key: keyof Limits; label: string; unit: string }[] = [
   { key: "max_users", label: "Active users", unit: "users" },
   { key: "max_documents", label: "Documents", unit: "documents" },
   { key: "max_storage_mb", label: "Storage", unit: "MB" },
+  { key: "max_ai_queries_month", label: "AI questions / month", unit: "questions" },
+  { key: "max_ai_tokens_month", label: "AI tokens / month", unit: "tokens" },
 ];
 
 function asApiError(err: unknown): ApiError {
@@ -42,6 +44,23 @@ export function OrganizationDetailView({ id }: { id: string }) {
     setActionError(null);
     try {
       setOrg(await platformService.updateOrganization(id, update));
+    } catch (err) {
+      setActionError(asApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    const typed = window.prompt(
+      `This permanently deletes "${org?.name}" and ALL its documents, vectors, files and history.\nType the organization's name to confirm:`,
+    );
+    if (!typed) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await platformService.deleteOrganization(id, typed);
+      setOrg((o) => (o ? { ...o, status: "DELETING" } : o));
     } catch (err) {
       setActionError(asApiError(err));
     } finally {
@@ -75,7 +94,7 @@ export function OrganizationDetailView({ id }: { id: string }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <Badge tone={suspended ? "danger" : "ok"}>{suspended ? "Suspended" : "Active"}</Badge>
+            <Badge tone={org.status === "ACTIVE" ? "ok" : "danger"}>{org.status === "ACTIVE" ? "Active" : org.status === "DELETING" ? "Deleting" : "Suspended"}</Badge>
             <Badge tone="brand">{org.plan}</Badge>
           </div>
           <h1 className="display text-[30px] leading-tight">{org.name}</h1>
@@ -83,7 +102,13 @@ export function OrganizationDetailView({ id }: { id: string }) {
             {org.slug} · created {formatDate(org.created_at)} · last active {org.last_active_at ? relativeTime(org.last_active_at) : "never"}
           </p>
         </div>
+        {canEdit && org.status !== "DELETING" && (
+          <Button variant="ghost" disabled={busy} onClick={() => void remove()} className="text-danger">
+            <Trash2 className="h-4 w-4" /> Delete organization
+          </Button>
+        )}
         {canEdit &&
+          org.status !== "DELETING" &&
           (suspended ? (
             <Button disabled={busy} onClick={() => void apply({ status: "ACTIVE" })}>
               <CheckCircle2 className="h-4 w-4" /> Reactivate
@@ -95,6 +120,11 @@ export function OrganizationDetailView({ id }: { id: string }) {
           ))}
       </div>
 
+      {org.status === "DELETING" && (
+        <div className="rounded-xl border border-danger/25 bg-danger-soft px-4 py-3 text-[13px] text-ink">
+          <strong>Being deleted.</strong> Access has ended; documents, vectors, files and history are being erased in the background.
+        </div>
+      )}
       {suspended && (
         <div className="rounded-xl border border-danger/25 bg-danger-soft px-4 py-3 text-[13px] text-ink">
           <strong>Suspended {formatDate(org.suspended_at)}.</strong> {org.suspended_reason} — its users cannot sign in.
@@ -123,6 +153,15 @@ export function OrganizationDetailView({ id }: { id: string }) {
                 </span>
               ))}
               {org.failed_documents > 0 && <span className="rounded-md bg-danger-soft px-2 py-0.5 text-danger">{org.failed_documents} failed</span>}
+            </div>
+            <div className="grid gap-5 border-t border-line p-5 sm:grid-cols-2">
+              <Usage label={`AI questions (${org.ai_usage_this_month.period})`} used={org.ai_usage_this_month.queries} max={org.limits.max_ai_queries_month} />
+              <Usage
+                label="AI tokens"
+                used={org.ai_usage_this_month.prompt_tokens + org.ai_usage_this_month.completion_tokens + org.ai_usage_this_month.embedding_tokens}
+                max={org.limits.max_ai_tokens_month}
+                format={(n) => new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n)}
+              />
             </div>
           </Card>
 
@@ -261,9 +300,5 @@ function PlanCard({ org, canEdit, busy, onApply }: { org: OrgDetail; canEdit: bo
 }
 
 function toStrings(limits: Limits): Record<keyof Limits, string> {
-  return {
-    max_users: limits.max_users?.toString() ?? "",
-    max_documents: limits.max_documents?.toString() ?? "",
-    max_storage_mb: limits.max_storage_mb?.toString() ?? "",
-  };
+  return Object.fromEntries(LIMIT_FIELDS.map(({ key }) => [key, limits[key]?.toString() ?? ""])) as Record<keyof Limits, string>;
 }

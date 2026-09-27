@@ -32,13 +32,16 @@ class PlanLimits:
     max_users: int | None
     max_documents: int | None
     max_storage_mb: int | None
+    # Phase 22: AI usage per calendar month.
+    max_ai_queries_month: int | None = None
+    max_ai_tokens_month: int | None = None
 
 
 PLAN_LIMITS: dict[Plan, PlanLimits] = {
-    Plan.FREE: PlanLimits(max_users=5, max_documents=200, max_storage_mb=2 * 1024),
-    Plan.STARTER: PlanLimits(max_users=25, max_documents=2_000, max_storage_mb=20 * 1024),
-    Plan.BUSINESS: PlanLimits(max_users=100, max_documents=20_000, max_storage_mb=200 * 1024),
-    Plan.ENTERPRISE: PlanLimits(max_users=None, max_documents=None, max_storage_mb=None),
+    Plan.FREE: PlanLimits(5, 200, 2 * 1024, 500, 1_000_000),
+    Plan.STARTER: PlanLimits(25, 2_000, 20 * 1024, 5_000, 10_000_000),
+    Plan.BUSINESS: PlanLimits(100, 20_000, 200 * 1024, 20_000, 40_000_000),
+    Plan.ENTERPRISE: PlanLimits(None, None, None, None, None),
 }
 
 
@@ -49,6 +52,8 @@ def apply_plan(organization: Organization, plan: Plan) -> None:
     organization.max_users = limits.max_users
     organization.max_documents = limits.max_documents
     organization.max_storage_mb = limits.max_storage_mb
+    organization.max_ai_queries_month = limits.max_ai_queries_month
+    organization.max_ai_tokens_month = limits.max_ai_tokens_month
 
 
 @dataclass(frozen=True)

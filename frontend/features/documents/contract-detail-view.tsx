@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
-import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ScanSearch, ShieldAlert, Upload } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ScanSearch, ShieldAlert, Upload, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -124,6 +124,14 @@ export function ContractDetailView({ id }: { id: string }) {
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload new version
                 </Button>
               </>
+            )}
+            {!config.useDemoData && doc.versions.length > 0 && (
+              <Button
+                variant="secondary"
+                onClick={() => void documentService.download(doc.id, doc.versions.at(-1)!.id, doc.fileName).catch((err) => setUploadError(err))}
+              >
+                <Download className="h-4 w-4" /> Download
+              </Button>
             )}
             {can(me, "analysis:run") && (
               <Link href="/compare">

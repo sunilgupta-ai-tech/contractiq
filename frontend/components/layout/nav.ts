@@ -1,4 +1,4 @@
-import { Activity, FileText, GitCompareArrows, LayoutGrid, MessageSquareText, ShieldAlert, UsersRound, type LucideIcon } from "lucide-react";
+import { Activity, FileText, Gauge, ScrollText, GitCompareArrows, LayoutGrid, MessageSquareText, ShieldAlert, UsersRound, type LucideIcon } from "lucide-react";
 import type { Permission } from "@/types";
 
 export interface NavItem {
@@ -20,5 +20,7 @@ export const primaryNav: NavItem[] = [
 
 export const secondaryNav: NavItem[] = [
   { href: "/team", label: "Team", icon: UsersRound, requires: "user:manage" },
+  { href: "/usage", label: "Usage", icon: Gauge, requires: "user:manage" },
+  { href: "/audit", label: "Audit log", icon: ScrollText, requires: "user:manage" },
   { href: "/system", label: "System health", icon: Activity },
 ];

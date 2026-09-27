@@ -22,6 +22,7 @@ from app.db.models import Document, DocumentStatus, DocumentVersion, JobStatus, 
 from app.db.tenancy import bind_tenant
 from app.document_processing.parser import PdfProcessingError
 from app.observability import metrics
+from app.services import usage
 
 from ..services.pipeline import PIPELINE, Stage, StageContext
 
@@ -136,6 +137,9 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             error_message=None,
         )
 
+        # Phase 22: embeddings, captions and transcription count toward the
+        # organization's AI usage.
+        tally, tally_token = usage.begin_tally()
         stage: Stage | None = None
         try:
             for stage in PIPELINE:
@@ -166,6 +170,8 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             else:
                 logger.exception("stage_failed", extra={"job_id": job_id, "stage": stage_name})
             await session.rollback()
+            usage.end_tally(tally_token)
+            await usage.record(session, job.organization_id, tally)
             _apply_version_updates(version, stage_ctx.version_updates)
             # Only PdfProcessingError messages are written for users; other
             # exception text may contain internals and stays in the logs.
@@ -188,6 +194,8 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
                 return {"status": "FAILED", "reason": exc.user_message, "timings_ms": timings}
             raise
 
+        usage.end_tally(tally_token)
+        await usage.record(session, job.organization_id, tally)
         _apply_version_updates(version, stage_ctx.version_updates)
         await _set_status(
             session,

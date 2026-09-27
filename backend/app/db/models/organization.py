@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, Integer, String
+from sqlalchemy import BigInteger, DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -20,6 +20,7 @@ class OrganizationStatus(StrEnum):
 
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
+    DELETING = "DELETING"  # Phase 22: access ended; data being erased in the background
 
 
 class Plan(StrEnum):
@@ -56,6 +57,9 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     max_users: Mapped[int | None] = mapped_column(Integer)
     max_documents: Mapped[int | None] = mapped_column(Integer)
     max_storage_mb: Mapped[int | None] = mapped_column(Integer)
+    # Phase 22: AI usage per calendar month (UTC). NULL = unlimited.
+    max_ai_queries_month: Mapped[int | None] = mapped_column(Integer)
+    max_ai_tokens_month: Mapped[int | None] = mapped_column(BigInteger)
 
     users: Mapped[list[User]] = relationship(back_populates="organization")
 

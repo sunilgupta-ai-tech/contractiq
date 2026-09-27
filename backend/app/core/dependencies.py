@@ -42,6 +42,7 @@ from app.services.platform_service import PlatformService
 from app.services.query_service import QueryService
 from app.services.risk_service import RiskService
 from app.services.role_service import RoleService
+from app.services.usage import AIMeter
 from app.services.user_service import UserService
 
 _bearer = HTTPBearer(auto_error=False)
@@ -264,6 +265,7 @@ def get_document_service(
 
 
 def get_query_service(
+    request: Request,
     user: Annotated[CurrentUser, Depends(require_permission(Permission.QUERY_RUN))],
     session: Annotated[AsyncSession, Depends(get_tenant_session)],
     resources: Annotated[Resources, Depends(get_resources)],
@@ -276,6 +278,7 @@ def get_query_service(
         permissions=user.permissions,
         resources=resources,
         access=document_access(user),
+        meta=RequestMeta.from_client_host(request.client.host if request.client else None),
     )
 
 
@@ -300,7 +303,16 @@ def get_comparison_service(
     return ComparisonService(contracts)
 
 
+def get_ai_meter(
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_tenant_session)],
+) -> AIMeter:
+    """Phase 22: AI usage accounting and monthly limits for the caller's organization."""
+    return AIMeter(session, user.tenant_id)
+
+
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+AIMeterDep = Annotated[AIMeter, Depends(get_ai_meter)]
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
 TenantSession = Annotated[AsyncSession, Depends(get_tenant_session)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
@@ -387,6 +399,7 @@ def get_platform_service(
         session,
         redis=resources.redis if resources else None,
         revoke_ttl_s=_revoke_ttl_s(request),
+        queue=resources.queue if resources else None,
     )
 
 

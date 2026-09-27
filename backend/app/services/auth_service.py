@@ -213,6 +213,10 @@ class AuthService:
         org = await get_organization(self.session, user.organization_id)
         return org is not None and org.is_active
 
+    def issue_tokens(self, user: User) -> TokenPair:
+        """Tokens for a user just created elsewhere (Phase 22 invitations)."""
+        return self._issue_tokens(user)
+
     def _issue_tokens(self, user: User) -> TokenPair:
         subject, tenant_id = str(user.id), str(user.organization_id)
         role, role_id, permissions = user.role.name, str(user.role_id), user.role.permissions

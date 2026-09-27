@@ -4,7 +4,7 @@ import type { FileType } from "@/types";
 // Shapes follow backend app/schemas/platform.py (snake_case kept: this
 // console is small and reads them directly).
 
-export type OrgStatus = "ACTIVE" | "SUSPENDED";
+export type OrgStatus = "ACTIVE" | "SUSPENDED" | "DELETING";
 export type Plan = "FREE" | "STARTER" | "BUSINESS" | "ENTERPRISE";
 export type PlatformRole = "SUPER_ADMIN" | "SUPPORT";
 
@@ -14,6 +14,8 @@ export interface Limits {
   max_users: number | null;
   max_documents: number | null;
   max_storage_mb: number | null;
+  max_ai_queries_month: number | null;
+  max_ai_tokens_month: number | null;
 }
 
 export interface OrgSummary {
@@ -43,6 +45,14 @@ export interface OrgDetail extends OrgSummary {
   documents_by_type: Record<FileType, number>;
   failed_documents: number;
   members: OrgMember[];
+  ai_usage_this_month: {
+    period: string;
+    queries: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    embedding_tokens: number;
+    model_calls: number;
+  };
 }
 
 export interface Overview {
@@ -92,6 +102,8 @@ export interface OrgUpdate {
   max_users?: number;
   max_documents?: number;
   max_storage_mb?: number;
+  max_ai_queries_month?: number;
+  max_ai_tokens_month?: number;
   unlimited?: (keyof Limits)[];
 }
 
@@ -118,6 +130,9 @@ export const platformService = {
   organization: (id: string) => platformRequest<OrgDetail>(`/organizations/${encodeURIComponent(id)}`),
   updateOrganization: (id: string, body: OrgUpdate) =>
     platformRequest<OrgDetail>(`/organizations/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  /** Phase 22: irreversible; access ends now, data is erased in the background. */
+  deleteOrganization: (id: string, confirmName: string) =>
+    platformRequest<null>(`/organizations/${encodeURIComponent(id)}`, { method: "DELETE", body: { confirm_name: confirmName } }),
   setMemberActive: (orgId: string, userId: string, isActive: boolean) =>
     platformRequest<OrgDetail>(
       `/organizations/${encodeURIComponent(orgId)}/members/${encodeURIComponent(userId)}`,

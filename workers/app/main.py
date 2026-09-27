@@ -25,6 +25,7 @@ from .tasks.analysis import analyze_version
 from .tasks.document_processing import process_document
 from .tasks.embedding import reembed_tenant
 from .tasks.indexing import delete_document_vectors
+from .tasks.organization import delete_organization
 
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_json)
@@ -52,6 +53,7 @@ class WorkerSettings:
         reembed_tenant,
         delete_document_vectors,
         analyze_version,
+        delete_organization,
     ]
     on_startup = startup
     on_shutdown = shutdown
