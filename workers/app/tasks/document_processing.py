@@ -86,6 +86,22 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
         assert document is not None
         tenant_id_ctx.set(str(job.organization_id))
 
+        # A retry of a failed version whose file has since been uploaded
+        # again (Phase 19): the new copy is the live one, so this one stays
+        # failed instead of creating a second, duplicate index entry.
+        if version.status is DocumentStatus.FAILED:
+            live_copy = await session.scalar(
+                select(DocumentVersion.id).where(
+                    DocumentVersion.organization_id == version.organization_id,
+                    DocumentVersion.sha256 == version.sha256,
+                    DocumentVersion.status != DocumentStatus.FAILED,
+                    DocumentVersion.id != version.id,
+                )
+            )
+            if live_copy is not None:
+                logger.info("superseded_by_upload", extra={"job_id": job_id})
+                return {"status": "superseded", "by_version": str(live_copy)}
+
         # Is this the document's newest version? Only the newest becomes the
         # "current" one (searched by default); re-processing an older version
         # must not demote a newer one.

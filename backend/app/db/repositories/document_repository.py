@@ -149,8 +149,10 @@ class DocumentVersionRepository(TenantScopedRepository[DocumentVersion]):
     async def find_live_duplicate(self, sha256: str) -> DocumentVersion | None:
         """An earlier upload of identical bytes in this tenant that did not fail.
 
-        Deliberately tenant-scoped: matching across tenants would tell one
-        organization that another holds the same contract.
+        Deliberately tenant-scoped (and, independently, under row-level
+        security): matching across tenants would tell one organization that
+        another holds the same document. The file name plays no part: the
+        same name with different content is a different document.
         """
         stmt = (
             self._scoped()

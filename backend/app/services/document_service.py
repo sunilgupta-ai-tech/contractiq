@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
     ConflictError,
+    DuplicateDocumentError,
     FileTooLargeError,
     InvalidFileError,
     ServiceUnavailableError,
@@ -219,22 +220,17 @@ class DocumentService:
         upload_format: UploadFormat | None = None,
     ) -> UploadResult:
         fmt = upload_format or format_for_storage_key(STORED_FILENAME)
+        # Duplicates first (Phase 19): a copy of an existing file is not
+        # stored, processed or embedded again, and must not be reported as
+        # a plan limit either.
+        sha256 = hashlib.sha256(data).hexdigest()
+        await self._reject_duplicate(sha256)
         await ensure_can_upload(
             self.session,
             self.tenant_id,
             new_document=metadata.document_id is None,
             size_bytes=len(data),
         )
-        sha256 = hashlib.sha256(data).hexdigest()
-        duplicate = await self.versions.find_live_duplicate(sha256)
-        if duplicate is not None:
-            raise ConflictError(
-                "This file has already been uploaded.",
-                details={
-                    "document_id": str(duplicate.document_id),
-                    "version_id": str(duplicate.id),
-                },
-            )
 
         if metadata.document_id is not None:
             document = await self.documents.get_with_versions(metadata.document_id)
@@ -320,7 +316,10 @@ class DocumentService:
             await self.session.rollback()
             await self._delete_object_quietly(key)
             if isinstance(exc, IntegrityError):
-                # Two versions of one document uploaded at the same moment.
+                # The same file uploaded twice at the same moment: the
+                # database's unique index lets only one through.
+                await self._reject_duplicate(sha256)
+                # Otherwise two versions of one document at the same moment.
                 raise ConflictError(
                     "Another version of this document was uploaded at the same time. "
                     "Please try again."
@@ -379,6 +378,21 @@ class DocumentService:
     ) -> DocumentFacets:
         counts = await self.documents.file_type_counts(status=status, search=search)
         return DocumentFacets(all=sum(counts.values()), by_file_type=counts)
+
+    async def _reject_duplicate(self, sha256: str) -> None:
+        duplicate = await self.versions.find_live_duplicate(sha256)
+        if duplicate is None:
+            return
+        document = await self.documents.get_with_versions(duplicate.document_id)
+        raise DuplicateDocumentError(
+            details={
+                # Only ever this organization's own document.
+                "document_id": str(document.id),
+                "document_title": document.title,
+                "version_id": str(duplicate.id),
+                "version_label": duplicate.label,
+            }
+        )
 
     async def get(self, document_id: uuid.UUID) -> DocumentDetail:
         return to_document_detail(await self.documents.get_with_versions(document_id))

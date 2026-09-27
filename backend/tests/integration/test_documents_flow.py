@@ -80,6 +80,7 @@ def test_duplicate_upload_is_rejected_with_a_pointer(api, cleanup):
     first = _upload(api, admin, data=data).json()["data"]
     again = _upload(api, admin, data=data, filename="copy.pdf")
     assert again.status_code == 409
+    assert again.json()["error"]["code"] == "DUPLICATE_DOCUMENT"
     assert again.json()["error"]["details"]["document_id"] == first["document"]["id"]
 
     # The same bytes in a different organization are not a duplicate.

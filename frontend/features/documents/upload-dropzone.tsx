@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { FileUp, Lock, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { config } from "@/lib/config";
+import { ApiError } from "@/lib/api-client";
 import { documentService } from "@/services/document-service";
 import type { ContractDocument } from "@/types";
 import { cn } from "@/utils/cn";
@@ -13,6 +15,15 @@ interface Upload {
   name: string;
   pct: number;
   error?: string;
+  /** Set when the file already exists in the organization (409 DUPLICATE_DOCUMENT). */
+  existing?: { id: string; title: string };
+}
+
+/** The organization's own copy of a duplicate upload, if that is the error. */
+function existingCopy(err: unknown): Upload["existing"] {
+  if (!(err instanceof ApiError) || err.code !== "DUPLICATE_DOCUMENT") return undefined;
+  const details = (err.details ?? {}) as { document_id?: string; document_title?: string };
+  return details.document_id ? { id: details.document_id, title: details.document_title ?? "" } : undefined;
 }
 
 export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocument) => void }) {
@@ -33,7 +44,7 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
         onUploaded(doc);
         setTimeout(() => setUploads((list) => list.filter((u) => u.name !== file.name)), 1200);
       } catch (err) {
-        update(file.name, { error: err instanceof Error ? err.message : "Upload failed" });
+        update(file.name, { error: err instanceof Error ? err.message : "Upload failed", existing: existingCopy(err) });
       }
     }
   }
@@ -78,7 +89,14 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
             <li key={u.name} className="flex items-center gap-3 text-2xs">
               <span className="max-w-[40%] truncate font-medium text-ink">{u.name}</span>
               {u.error ? (
-                <span className="text-danger">{u.error}</span>
+                <span className={u.existing ? "text-warn" : "text-danger"}>
+                  {u.error}
+                  {u.existing && (
+                    <Link href={`/documents/${u.existing.id}`} className="ml-1.5 font-medium text-brand underline-offset-2 hover:underline">
+                      Open {u.existing.title ? `“${u.existing.title}”` : "it"}
+                    </Link>
+                  )}
+                </span>
               ) : (
                 <span className="h-1 flex-1 overflow-hidden rounded-full bg-line">
                   <span className="block h-full bg-brand transition-[width]" style={{ width: `${u.pct}%` }} />

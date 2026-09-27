@@ -397,6 +397,39 @@ async def test_unreadable_word_file_fails_permanently(env):
     assert version.error_message == "The Word file is damaged or could not be read."
 
 
+async def test_retry_of_a_failed_version_uploaded_again_is_skipped(env):
+    """Phase 19: the file failed, the user uploaded it again (the live copy),
+    then the old job is retried — it must not become a second live copy."""
+    db, resources = env
+    job_id = await _seed(resources, pdf_factory.contract_pdf())
+    job, version, doc = await _load(db, job_id)
+    async with db.session_factory() as s:
+        failed = await s.get(DocumentVersion, version.id)
+        failed.status = DocumentStatus.FAILED
+        await s.flush()
+        again = Document(title="Acme MSA again", organization_id=doc.organization_id)
+        s.add(again)
+        await s.flush()
+        s.add(
+            DocumentVersion(
+                organization_id=doc.organization_id,
+                document_id=again.id,
+                version_number=1,
+                label="v1",
+                original_filename="msa.pdf",
+                storage_key=version.storage_key + "-again",
+                mime_type="application/pdf",
+                size_bytes=1,
+                sha256=version.sha256,
+            )
+        )
+        await s.commit()
+    result = await process_document({"resources": resources}, job_id)
+    assert result["status"] == "superseded"
+    _, still, _ = await _load(db, job_id)
+    assert still.status is DocumentStatus.FAILED
+
+
 async def test_password_protected_pdf_fails_permanently_without_retry(env):
     db, resources = env
     job_id = await _seed(resources, pdf_factory.encrypted_pdf())

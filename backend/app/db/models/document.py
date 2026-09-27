@@ -14,7 +14,18 @@ from datetime import date
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Date, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Date,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -99,7 +110,18 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
 
 class DocumentVersion(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
     __tablename__ = "document_versions"
-    __table_args__ = (UniqueConstraint("document_id", "version_number"),)
+    __table_args__ = (
+        UniqueConstraint("document_id", "version_number"),
+        # Phase 19: one live copy of the same bytes per organization. Failed
+        # versions are left out, so a file that failed can be uploaded again.
+        Index(
+            "uq_document_versions_org_sha256_live",
+            "organization_id",
+            "sha256",
+            unique=True,
+            postgresql_where=text("status <> 'FAILED'"),
+        ),
+    )
 
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

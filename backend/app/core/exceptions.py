@@ -40,6 +40,7 @@ class ErrorCode(StrEnum):
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
     PLAN_LIMIT_REACHED = "PLAN_LIMIT_REACHED"
     ORGANIZATION_SUSPENDED = "ORGANIZATION_SUSPENDED"
+    DUPLICATE_DOCUMENT = "DUPLICATE_DOCUMENT"
 
 
 class AppError(Exception):
@@ -104,6 +105,16 @@ class OrganizationSuspendedError(AppError):
     status_code = status.HTTP_403_FORBIDDEN
     code = ErrorCode.ORGANIZATION_SUSPENDED
     message = "Your organization's access is suspended. Contact support."
+
+
+class DuplicateDocumentError(AppError):
+    """The same bytes are already in this organization (Phase 19). Checked
+    only within the caller's tenant, so it never reveals another
+    organization's files."""
+
+    status_code = status.HTTP_409_CONFLICT
+    code = ErrorCode.DUPLICATE_DOCUMENT
+    message = "This document already exists in your organization."
 
 
 class InvalidFileError(AppError):
