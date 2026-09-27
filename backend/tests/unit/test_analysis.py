@@ -18,6 +18,7 @@ from app.agents.comparison_agent import DiffKind, align
 from app.agents.risk_agent import RiskAgent, Severity
 from app.core.config import Settings
 from app.core.security import SystemRole
+from app.db.repositories.document_repository import DocumentAccess
 from app.llm.base import LLMConfigError, LLMError
 from app.rag.reranker import NoopReranker
 from app.services.contract_service import ContractAnalyzer, VersionRef, key_dates, key_terms
@@ -523,6 +524,7 @@ async def test_beyond_the_inline_budget_documents_are_queued(tmp_path):
         None,
         uuid.UUID(TENANT),
         resources,
+        access=DocumentAccess.system(),
         analyzer_factory=lambda _: analyzer,  # type: ignore[arg-type]
     )
     second = replace(REF, document_id=str(uuid.uuid4()), version_id=str(uuid.uuid4()))

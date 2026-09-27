@@ -26,6 +26,8 @@ export const PERMISSIONS = [
   "document:read",
   "document:upload",
   "document:delete",
+  "document:share",
+  "document:read_all",
   "query:run",
   "analysis:run",
   "evaluation:run",
@@ -76,6 +78,10 @@ export interface ContractDocument {
   contractType: ContractType;
   fileType: FileType;
   fileName: string; // original name of the latest version
+  /** Phase 20: RESTRICTED = only the uploader, chosen people/roles and admins. */
+  visibility: "ORGANIZATION" | "RESTRICTED";
+  /** Phase 20: passages in the latest version that read like instructions to an AI. */
+  injectionFlags: number;
   status: DocumentStatus;
   progress: number; // 0-100 while processing
   pages: number;

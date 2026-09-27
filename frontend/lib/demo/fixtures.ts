@@ -17,7 +17,7 @@ import type {
 const iso = (d: string) => new Date(d).toISOString();
 
 // Every demo contract is a PDF; the file name follows the title.
-type DemoDocument = Omit<ContractDocument, "fileType" | "fileName">;
+type DemoDocument = Omit<ContractDocument, "fileType" | "fileName" | "visibility" | "injectionFlags">;
 
 const demoContracts: DemoDocument[] = [
   {
@@ -89,6 +89,8 @@ const demoContracts: DemoDocument[] = [
 export const demoDocuments: ContractDocument[] = demoContracts.map((d) => ({
   ...d,
   fileType: "PDF",
+  visibility: "ORGANIZATION",
+  injectionFlags: 0,
   fileName: `${d.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}.pdf`,
 }));
 

@@ -47,6 +47,7 @@ def retrieval_filter(
     embedding_model: str,
     document_ids: Sequence[str] | None = None,
     version_ids: Sequence[str] | None = None,
+    exclude_document_ids: Sequence[str] = (),
 ) -> qm.Filter:
     """The filter every question-answering search uses (see module docstring)."""
     extra: list[qm.Condition] = [
@@ -56,7 +57,13 @@ def retrieval_filter(
     if not version_ids:
         # Without explicit versions, answer from each document's latest version.
         extra.append(qm.FieldCondition(key="is_current", match=qm.MatchValue(value=True)))
-    return tenant_filter(tenant_id, document_ids=document_ids, version_ids=version_ids, extra=extra)
+    return tenant_filter(
+        tenant_id,
+        document_ids=document_ids,
+        version_ids=version_ids,
+        extra=extra,
+        exclude_document_ids=exclude_document_ids,
+    )
 
 
 async def hybrid_search(

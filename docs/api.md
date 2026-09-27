@@ -16,6 +16,8 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | GET, POST | `/users` | 2 | live — ADMIN only (`user:manage`), own organization only |
 | PATCH | `/users/{id}` | 2, 17 | live — `user:manage`; name, `role_id`, active status (not your own role/status, not a user with more access than you); revokes that user's tokens at once |
 | * | `/platform/...` | 18 | live — platform console, separate sign-in and token audience; see [platform.md](platform.md) |
+| GET / PUT | `/documents/{id}/access` | 20 | live — who can see a document: `visibility` (`ORGANIZATION`/`RESTRICTED`), `user_ids`, `role_ids`; PUT needs `document:share` or being the uploader |
+| GET | `/documents/directory` | 20 | live — active colleagues and roles to share with |
 | GET | `/permissions` | 17 | live — the permission catalog (key, group, label, description) |
 | GET | `/roles` | 17 | live — `user:manage` or `role:manage`; system roles + the organization's custom roles, with member counts |
 | POST / PATCH / DELETE | `/roles`, `/roles/{id}` | 17 | live — `role:manage`; custom roles only, permissions within your own, never the role you hold; delete only when unused (409 otherwise); a permission change revokes the organization's tokens |

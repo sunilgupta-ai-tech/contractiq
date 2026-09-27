@@ -82,6 +82,63 @@ function demoMatches(d: ContractDocument, query: Pick<LibraryQuery, "status" | "
   return statusOk && (!q || [d.title, d.counterparty, d.fileName].some((v) => v.toLowerCase().includes(q)));
 }
 
+export interface AccessGrant {
+  kind: "user" | "role";
+  id: string;
+  name: string;
+  email: string | null;
+}
+
+export interface DocumentAccessInfo {
+  visibility: "ORGANIZATION" | "RESTRICTED";
+  ownerId: string | null;
+  ownerName: string | null;
+  grants: AccessGrant[];
+  canManage: boolean;
+}
+
+export interface Directory {
+  users: { id: string; name: string; email: string }[];
+  roles: { id: string; name: string }[];
+}
+
+interface ApiAccess {
+  visibility: "ORGANIZATION" | "RESTRICTED";
+  owner_id: string | null;
+  owner_name: string | null;
+  grants: AccessGrant[];
+  can_manage: boolean;
+}
+
+const toAccess = (a: ApiAccess): DocumentAccessInfo => ({
+  visibility: a.visibility,
+  ownerId: a.owner_id,
+  ownerName: a.owner_name,
+  grants: a.grants,
+  canManage: a.can_manage,
+});
+
+/** Who can see a document, and changing it (Phase 20). */
+export const accessService = {
+  async get(id: string): Promise<DocumentAccessInfo> {
+    return toAccess(await apiRequest<ApiAccess>(`/documents/${encodeURIComponent(id)}/access`));
+  },
+  async set(id: string, visibility: "ORGANIZATION" | "RESTRICTED", userIds: string[], roleIds: string[]) {
+    return toAccess(
+      await apiRequest<ApiAccess>(`/documents/${encodeURIComponent(id)}/access`, {
+        method: "PUT",
+        body: { visibility, user_ids: userIds, role_ids: roleIds },
+      }),
+    );
+  },
+  async directory(): Promise<Directory> {
+    const d = await apiRequest<{ users: { id: string; full_name: string; email: string }[]; roles: Directory["roles"] }>(
+      "/documents/directory",
+    );
+    return { users: d.users.map((u) => ({ id: u.id, name: u.full_name, email: u.email })), roles: d.roles };
+  },
+};
+
 export const documentService = {
   /** One page of the organization's library (Phase 15): filtered by file
    *  type, status and search, sorted and paged on the server. */
@@ -147,7 +204,11 @@ export const documentService = {
     return { status: s.status, progress: s.progress };
   },
 
-  async upload(file: File, onProgress?: (pct: number) => void): Promise<ContractDocument> {
+  async upload(
+    file: File,
+    onProgress?: (pct: number) => void,
+    options: { private?: boolean } = {},
+  ): Promise<ContractDocument> {
     if (config.useDemoData) {
       // Simulate upload progress, then return a queued document.
       return new Promise((resolve) => {
@@ -173,6 +234,7 @@ export const documentService = {
     }
     const form = new FormData();
     form.append("file", file);
+    if (options.private) form.append("visibility", "RESTRICTED");
     const result = await apiRequest<{ document: ApiDocument }>("/documents/upload", {
       method: "POST",
       body: form,

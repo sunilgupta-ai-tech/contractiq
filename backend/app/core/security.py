@@ -47,6 +47,8 @@ class Permission(StrEnum):
     DOCUMENT_READ = "document:read"
     DOCUMENT_UPLOAD = "document:upload"
     DOCUMENT_DELETE = "document:delete"
+    DOCUMENT_SHARE = "document:share"  # Phase 20: manage who sees a document
+    DOCUMENT_READ_ALL = "document:read_all"  # Phase 20: see restricted documents too
     QUERY_RUN = "query:run"
     ANALYSIS_RUN = "analysis:run"
     EVALUATION_RUN = "evaluation:run"
@@ -72,6 +74,16 @@ PERMISSION_INFO: dict[Permission, PermissionInfo] = {
     Permission.DOCUMENT_DELETE: PermissionInfo(
         "Documents", "Delete documents", "Permanently remove documents and all their versions."
     ),
+    Permission.DOCUMENT_SHARE: PermissionInfo(
+        "Documents",
+        "Manage document access",
+        "Restrict a document to chosen people or roles, or open it to everyone.",
+    ),
+    Permission.DOCUMENT_READ_ALL: PermissionInfo(
+        "Documents",
+        "See restricted documents",
+        "See every document in the organization, including restricted ones.",
+    ),
     Permission.QUERY_RUN: PermissionInfo(
         "Assistant", "Ask questions", "Use the Assistant to ask questions across documents."
     ),
@@ -96,6 +108,7 @@ SYSTEM_ROLE_PERMISSIONS: dict[SystemRole, frozenset[Permission]] = {
             Permission.DOCUMENT_READ,
             Permission.DOCUMENT_UPLOAD,
             Permission.DOCUMENT_DELETE,
+            Permission.DOCUMENT_SHARE,
             Permission.QUERY_RUN,
             Permission.ANALYSIS_RUN,
             Permission.EVALUATION_RUN,

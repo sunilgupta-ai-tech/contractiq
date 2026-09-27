@@ -23,6 +23,7 @@ from app.core.resources import Resources
 from app.core.security import Permission, decode_platform_token, decode_token, parse_permissions
 from app.core.sessions import platform_token_is_current, token_is_current
 from app.db.models import PlatformRole
+from app.db.repositories.document_repository import DocumentAccess
 from app.db.tenancy import bind_tenant
 from app.guardrails.input_guardrails import (
     RateLimiter,
@@ -79,6 +80,13 @@ class CurrentUser:
 
 
 STALE_SESSION = "Your access has changed. Please sign in again."
+
+
+def document_access(user: CurrentUser) -> DocumentAccess:
+    """Which of the tenant's documents this user may see (Phase 20)."""
+    return DocumentAccess.for_user(
+        user.user_id, user.role_id, read_all=user.can(Permission.DOCUMENT_READ_ALL)
+    )
 
 
 async def get_current_user(
@@ -252,7 +260,7 @@ def get_document_service(
     resources: Annotated[Resources, Depends(get_resources)],
 ) -> DocumentService:
     """Scoped to the caller's tenant from the signed token."""
-    return DocumentService(session, user.tenant_id, resources)
+    return DocumentService(session, user.tenant_id, resources, access=document_access(user))
 
 
 def get_query_service(
@@ -267,6 +275,7 @@ def get_query_service(
         user_id=user.user_id,
         permissions=user.permissions,
         resources=resources,
+        access=document_access(user),
     )
 
 
@@ -276,7 +285,7 @@ def get_contract_service(
     resources: Annotated[Resources, Depends(get_resources)],
 ) -> ContractService:
     """Contract analysis (Phase 10), scoped to the caller's tenant."""
-    return ContractService(session, user.tenant_id, resources)
+    return ContractService(session, user.tenant_id, resources, access=document_access(user))
 
 
 def get_risk_service(

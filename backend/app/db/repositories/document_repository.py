@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection, Sequence
+from dataclasses import dataclass
 from enum import StrEnum
 
-from sqlalchemy import Select, delete, exists, func, or_, select
+from sqlalchemy import ColumnElement, Select, delete, exists, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import NotFoundError
 from app.db.models import (
     ContractType,
     Document,
+    DocumentGrant,
     DocumentStatus,
     DocumentVersion,
+    DocumentVisibility,
     FileType,
     ProcessingJob,
 )
@@ -21,6 +25,44 @@ from app.db.repositories.base import TenantScopedRepository
 
 def _escape_like(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+@dataclass(frozen=True)
+class DocumentAccess:
+    """Which documents of the tenant a caller may see (Phase 20).
+
+    A RESTRICTED document is visible to its uploader, to users and roles
+    granted access, and to holders of document:read_all. Every repository
+    that reads documents takes one of these explicitly, so no call site can
+    forget the rule: `system()` is for the worker, which processes whatever
+    it is given and serves no user.
+    """
+
+    user_id: uuid.UUID | None
+    role_id: uuid.UUID | None
+    read_all: bool
+
+    @classmethod
+    def system(cls) -> DocumentAccess:
+        return cls(user_id=None, role_id=None, read_all=True)
+
+    @classmethod
+    def for_user(cls, user_id: uuid.UUID, role_id: uuid.UUID, *, read_all: bool) -> DocumentAccess:
+        return cls(user_id=user_id, role_id=role_id, read_all=read_all)
+
+    def visible(self) -> ColumnElement[bool] | None:
+        """The SQL condition on `Document`, or None when everything is visible."""
+        if self.read_all:
+            return None
+        granted = exists().where(
+            DocumentGrant.document_id == Document.id,
+            or_(DocumentGrant.user_id == self.user_id, DocumentGrant.role_id == self.role_id),
+        )
+        return or_(
+            Document.visibility == DocumentVisibility.ORGANIZATION,
+            Document.uploaded_by_id == self.user_id,
+            granted,
+        )
 
 
 class DocumentSort(StrEnum):
@@ -40,6 +82,32 @@ _ORDER = {
 
 class DocumentRepository(TenantScopedRepository[Document]):
     model = Document
+
+    def __init__(
+        self, session: AsyncSession, tenant_id: uuid.UUID, *, access: DocumentAccess
+    ) -> None:
+        super().__init__(session, tenant_id)
+        self.access = access
+
+    def _scoped(self) -> Select[tuple[Document]]:
+        stmt = super()._scoped()
+        condition = self.access.visible()
+        return stmt if condition is None else stmt.where(condition)
+
+    async def hidden_ids(self) -> list[str]:
+        """This tenant's documents the caller may NOT see. Search excludes
+        them (Phase 20), so no chunk of theirs can reach the model."""
+        condition = self.access.visible()
+        if condition is None:
+            return []
+        stmt = select(Document.id).where(Document.organization_id == self.tenant_id, ~condition)
+        return [str(i) for i in (await self.session.execute(stmt)).scalars()]
+
+    async def is_visible(self, document_id: uuid.UUID) -> bool:
+        stmt = select(func.count()).select_from(
+            self._scoped().where(Document.id == document_id).subquery()
+        )
+        return bool((await self.session.execute(stmt)).scalar_one())
 
     def _filtered(
         self,
@@ -144,7 +212,22 @@ class DocumentRepository(TenantScopedRepository[Document]):
 
 
 class DocumentVersionRepository(TenantScopedRepository[DocumentVersion]):
+    """Versions are visible when their document is (Phase 20)."""
+
     model = DocumentVersion
+
+    def __init__(
+        self, session: AsyncSession, tenant_id: uuid.UUID, *, access: DocumentAccess
+    ) -> None:
+        super().__init__(session, tenant_id)
+        self.access = access
+
+    def _scoped(self) -> Select[tuple[DocumentVersion]]:
+        stmt = super()._scoped()
+        condition = self.access.visible()
+        if condition is None:
+            return stmt
+        return stmt.where(exists().where(Document.id == DocumentVersion.document_id, condition))
 
     async def find_live_duplicate(self, sha256: str) -> DocumentVersion | None:
         """An earlier upload of identical bytes in this tenant that did not fail.
@@ -153,9 +236,14 @@ class DocumentVersionRepository(TenantScopedRepository[DocumentVersion]):
         security): matching across tenants would tell one organization that
         another holds the same document. The file name plays no part: the
         same name with different content is a different document.
+
+        NOT limited to the documents the caller can see: a copy of a
+        restricted document is still a duplicate (the caller is then told
+        only that it exists, not where — see DocumentService).
         """
         stmt = (
-            self._scoped()
+            super()
+            ._scoped()
             .where(DocumentVersion.sha256 == sha256)
             .where(DocumentVersion.status != DocumentStatus.FAILED)
             .limit(1)

@@ -17,6 +17,7 @@ from app.core.config import Settings
 from app.core.dependencies import AnalysisRateLimitDep, get_auth_service
 from app.core.exceptions import RateLimitedError
 from app.core.security import Permission, SystemRole
+from app.db.repositories.document_repository import DocumentAccess
 from app.guardrails.evidence_validator import (
     UNVERIFIED_MESSAGE,
     check_grounding,
@@ -257,6 +258,7 @@ def _query_service(**settings):
         user_id=uuid.uuid4(),
         permissions=perms(SystemRole.EMPLOYEE),
         resources=resources,  # type: ignore[arg-type]
+        access=DocumentAccess.system(),
     )
 
 

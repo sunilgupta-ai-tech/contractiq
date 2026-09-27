@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import type { ContractDocument } from "@/types";
@@ -50,6 +50,11 @@ export function DocumentsTable({ docs }: { docs: ContractDocument[] }) {
               <td className="px-3 py-3.5">
                 <span className="flex flex-wrap items-center gap-1">
                   <Badge>{fileTypeLabel(doc)}</Badge>
+                  {doc.visibility === "RESTRICTED" && (
+                    <Badge tone="warn">
+                      <Lock className="h-3 w-3" /> Restricted
+                    </Badge>
+                  )}
                   {doc.contractType !== "OTHER" && <Badge tone="brand">{doc.contractType}</Badge>}
                 </span>
               </td>

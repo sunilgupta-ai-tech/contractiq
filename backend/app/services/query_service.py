@@ -37,6 +37,7 @@ from app.db.repositories.conversation_repository import (
     MessageRepository,
 )
 from app.db.repositories.document_repository import (
+    DocumentAccess,
     DocumentRepository,
     DocumentVersionRepository,
 )
@@ -93,8 +94,10 @@ class QueryService:
         user_id: uuid.UUID,
         permissions: frozenset[Permission],
         resources: Resources,
+        access: DocumentAccess,
     ) -> None:
         self.session = session
+        self.access = access  # Phase 20: which of the tenant's documents are visible
         self.tenant_id = tenant_id
         self.user_id = user_id
         self.permissions = permissions  # the agent's tool registry checks them
@@ -170,10 +173,10 @@ class QueryService:
         return _response(request, conversation.id, assistant.id, result, latency_ms, mode)
 
     async def _validate_scope(self, request: QueryRequest) -> None:
-        documents = DocumentRepository(self.session, self.tenant_id)
+        documents = DocumentRepository(self.session, self.tenant_id, access=self.access)
         if await documents.count_ids(request.document_ids) != len(set(request.document_ids)):
             raise NotFoundError("One or more of the selected documents were not found.")
-        versions = DocumentVersionRepository(self.session, self.tenant_id)
+        versions = DocumentVersionRepository(self.session, self.tenant_id, access=self.access)
         if await versions.count_ids(request.version_ids) != len(set(request.version_ids)):
             raise NotFoundError("One or more of the selected versions were not found.")
 
@@ -226,7 +229,10 @@ class QueryService:
         try:
             # Building the components is where configuration problems show up
             # (missing key, unknown RERANKER) — reported as "not configured".
-            retriever = RetrievalService(self.resources)
+            hidden = await DocumentRepository(
+                self.session, self.tenant_id, access=self.access
+            ).hidden_ids()
+            retriever = RetrievalService(self.resources, hidden_document_ids=hidden)
             reranker = reranker_for(settings)
             llm = self.resources.llm()
             self.resources.embeddings()

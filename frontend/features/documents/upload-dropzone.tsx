@@ -30,6 +30,8 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
+  // Phase 20: keep new uploads private to the uploader until shared.
+  const [onlyMe, setOnlyMe] = useState(false);
 
   const update = (name: string, patch: Partial<Upload>) =>
     setUploads((list) => list.map((u) => (u.name === name ? { ...u, ...patch } : u)));
@@ -40,7 +42,7 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
       setUploads((list) => [{ name: file.name, pct: 0, error: check.ok ? undefined : check.reason }, ...list].slice(0, 4));
       if (!check.ok) continue;
       try {
-        const doc = await documentService.upload(file, (pct) => update(file.name, { pct }));
+        const doc = await documentService.upload(file, (pct) => update(file.name, { pct }), { private: onlyMe });
         onUploaded(doc);
         setTimeout(() => setUploads((list) => list.filter((u) => u.name !== file.name)), 1200);
       } catch (err) {
@@ -74,9 +76,17 @@ export function UploadDropzone({ onUploaded }: { onUploaded: (doc: ContractDocum
         <p className="mt-0.5 text-[13px] text-ink-2">
           PDF (digital or scanned), JPG, PNG, Word (.docx) or Excel (.xlsx) · up to {config.maxUploadMb} MB · handwriting and registers are read too.
         </p>
-        <p className="mt-2 inline-flex items-center gap-1.5 text-2xs text-ink-3">
-          <Lock className="h-3 w-3" /> Stored per organization and visible only to your organization.
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-ink-3">
+          <span className="inline-flex items-center gap-1.5">
+            <Lock className="h-3 w-3" /> Stored per organization and visible only to your organization.
+          </span>
+          {!config.useDemoData && (
+            <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-ink-2">
+              <input type="checkbox" checked={onlyMe} onChange={(e) => setOnlyMe(e.target.checked)} className="h-3.5 w-3.5 accent-[rgb(var(--brand))]" />
+              Only me — share it later
+            </label>
+          )}
+        </div>
       </div>
       <input ref={input} type="file" accept={UPLOAD_ACCEPT} multiple hidden onChange={(e) => void handleFiles(e.target.files)} />
       <Button onClick={() => input.current?.click()}>

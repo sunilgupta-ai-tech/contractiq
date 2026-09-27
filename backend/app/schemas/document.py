@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.db.models import ContractType, DocumentStatus, FileType, JobStatus, JobType
+from app.db.models import (
+    ContractType,
+    DocumentStatus,
+    DocumentVisibility,
+    FileType,
+    JobStatus,
+    JobType,
+)
 
 
 class DocumentVersionOut(BaseModel):
@@ -24,6 +32,9 @@ class DocumentVersionOut(BaseModel):
     is_scanned: bool | None
     status: DocumentStatus
     error_message: str | None
+    # Phase 20: passages that read like instructions to an AI. They are
+    # treated as data regardless; the count is shown so people know.
+    injection_flags: int = 0
     created_at: datetime
 
 
@@ -34,6 +45,7 @@ class DocumentOut(BaseModel):
     title: str
     contract_type: ContractType
     file_type: FileType
+    visibility: DocumentVisibility
     counterparty: str | None
     status: DocumentStatus
     effective_date: date | None
@@ -56,6 +68,49 @@ class DocumentFacets(BaseModel):
 
     all: int
     by_file_type: dict[FileType, int]
+
+
+class AccessGrantOut(BaseModel):
+    kind: Literal["user", "role"]
+    id: uuid.UUID
+    name: str
+    email: str | None = None
+
+
+class DocumentAccessOut(BaseModel):
+    """Who can see a document (Phase 20)."""
+
+    visibility: DocumentVisibility
+    owner_id: uuid.UUID | None
+    owner_name: str | None
+    grants: list[AccessGrantOut]
+    can_manage: bool
+
+
+class UpdateDocumentAccessRequest(BaseModel):
+    """Replace a document's access. With ORGANIZATION the grants are cleared."""
+
+    visibility: DocumentVisibility
+    user_ids: list[uuid.UUID] = Field(default_factory=list, max_length=500)
+    role_ids: list[uuid.UUID] = Field(default_factory=list, max_length=100)
+
+
+class DirectoryUser(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    email: str
+
+
+class DirectoryRole(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class DirectoryOut(BaseModel):
+    """People and roles a document can be shared with."""
+
+    users: list[DirectoryUser]
+    roles: list[DirectoryRole]
 
 
 class JobOut(BaseModel):

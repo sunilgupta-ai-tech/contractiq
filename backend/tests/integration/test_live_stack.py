@@ -15,7 +15,7 @@ from app.core.config import Settings
 from app.core.exceptions import NotFoundError
 from app.db.database import Database
 from app.db.models import Document, Organization
-from app.db.repositories.document_repository import DocumentRepository
+from app.db.repositories.document_repository import DocumentAccess, DocumentRepository
 from app.main import create_app
 
 pytestmark = pytest.mark.skipif(
@@ -58,12 +58,16 @@ async def test_repository_never_crosses_tenants():
         session.add_all([org_a, org_b])
         await session.flush()
 
-        doc_b = await DocumentRepository(session, org_b.id).add(Document(title="B's MSA"))
-        repo_a = DocumentRepository(session, org_a.id)
+        doc_b = await DocumentRepository(session, org_b.id, access=DocumentAccess.system()).add(
+            Document(title="B's MSA")
+        )
+        repo_a = DocumentRepository(session, org_a.id, access=DocumentAccess.system())
 
         with pytest.raises(NotFoundError):
             await repo_a.get(doc_b.id)
         assert await repo_a.count() == 0
-        assert await DocumentRepository(session, org_b.id).count() == 1
+        assert (
+            await DocumentRepository(session, org_b.id, access=DocumentAccess.system()).count() == 1
+        )
         await session.rollback()
     await db.dispose()

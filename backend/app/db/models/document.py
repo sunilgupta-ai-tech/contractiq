@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Date,
     Enum,
     ForeignKey,
@@ -60,6 +61,13 @@ class FileType(StrEnum):
     EXCEL = "EXCEL"
 
 
+class DocumentVisibility(StrEnum):
+    """Who in the organization may see a document (Phase 20)."""
+
+    ORGANIZATION = "ORGANIZATION"  # everyone with document:read
+    RESTRICTED = "RESTRICTED"  # uploader, granted users/roles, document:read_all
+
+
 class ContractType(StrEnum):
     MSA = "MSA"
     NDA = "NDA"
@@ -100,6 +108,12 @@ class Document(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    visibility: Mapped[DocumentVisibility] = mapped_column(
+        Enum(DocumentVisibility, name="document_visibility"),
+        default=DocumentVisibility.ORGANIZATION,
+        server_default=DocumentVisibility.ORGANIZATION.value,
+        nullable=False,
+    )
 
     versions: Mapped[list[DocumentVersion]] = relationship(
         back_populates="document",
@@ -150,4 +164,51 @@ class DocumentVersion(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="versions")
+
+    @property
+    def injection_flags(self) -> int:
+        """Passages that read like instructions to an AI (Phase 20 ingest scan)."""
+        found = (self.extraction_metadata or {}).get("injection") or {}
+        return int(found.get("chunks", 0))
+
     jobs: Mapped[list[ProcessingJob]] = relationship(back_populates="document_version")
+
+
+class DocumentGrant(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
+    """Access to a RESTRICTED document for one user or one role (Phase 20).
+    Exactly one of `user_id` / `role_id` is set."""
+
+    __tablename__ = "document_grants"
+    __table_args__ = (
+        CheckConstraint("num_nonnulls(user_id, role_id) = 1", name="one_principal"),
+        Index(
+            "uq_document_grants_user",
+            "document_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_document_grants_role",
+            "document_id",
+            "role_id",
+            unique=True,
+            postgresql_where=text("role_id IS NOT NULL"),
+        ),
+    )
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
+    role_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE")
+    )
+    granted_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )

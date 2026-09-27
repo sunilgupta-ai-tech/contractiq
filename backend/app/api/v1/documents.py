@@ -23,14 +23,17 @@ from app.core.dependencies import (
     SettingsDep,
     UploadRateLimitDep,
 )
-from app.db.models import ContractType, DocumentStatus, FileType
+from app.db.models import ContractType, DocumentStatus, DocumentVisibility, FileType
 from app.db.repositories.document_repository import DocumentSort
 from app.schemas.common import ApiResponse, Page
 from app.schemas.document import (
+    DirectoryOut,
+    DocumentAccessOut,
     DocumentDetail,
     DocumentFacets,
     DocumentOut,
     DocumentStatusOut,
+    UpdateDocumentAccessRequest,
     UploadResult,
 )
 from app.services.document_service import (
@@ -63,6 +66,10 @@ async def upload_document(
         uuid.UUID | None, Form(description="Upload as a new version of this document")
     ] = None,
     version_label: Annotated[str | None, Form(max_length=50)] = None,
+    visibility: Annotated[
+        DocumentVisibility,
+        Form(description="RESTRICTED keeps a new document private to you until you share it"),
+    ] = DocumentVisibility.ORGANIZATION,
 ) -> ApiResponse[UploadResult]:
     """Returns 202: the document is stored and queued; poll
     `/documents/{id}/status` for processing progress."""
@@ -79,6 +86,7 @@ async def upload_document(
             counterparty=counterparty or None,
             document_id=document_id,
             version_label=version_label or None,
+            visibility=visibility,
         ),
         actor_id=user.user_id,
         meta=meta,
@@ -138,6 +146,16 @@ async def document_facets(
     return ApiResponse(data=await service.facets(status=status_filter, search=q))
 
 
+# Declared before /documents/{document_id} so "directory" is not read as an id.
+@router.get(
+    "/documents/directory",
+    summary="People and roles a document can be shared with",
+    response_model=ApiResponse[DirectoryOut],
+)
+async def directory(_: DocumentReaderDep, service: DocumentServiceDep) -> ApiResponse[DirectoryOut]:
+    return ApiResponse(data=await service.directory())
+
+
 @router.get(
     "/documents/{document_id}",
     summary="Get document metadata and versions",
@@ -174,3 +192,37 @@ async def delete_document(
 ) -> Response:
     await service.delete(document_id, actor_id=user.user_id, meta=meta)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Document access (Phase 20) ---------------------------------------------------------
+
+
+@router.get(
+    "/documents/{document_id}/access",
+    summary="Who can see a document",
+    response_model=ApiResponse[DocumentAccessOut],
+)
+async def get_access(
+    user: DocumentReaderDep, document_id: uuid.UUID, service: DocumentServiceDep
+) -> ApiResponse[DocumentAccessOut]:
+    return ApiResponse(data=await service.get_access(document_id, permissions=user.permissions))
+
+
+@router.put(
+    "/documents/{document_id}/access",
+    summary="Restrict a document to chosen people and roles, or open it to everyone",
+    response_model=ApiResponse[DocumentAccessOut],
+)
+async def set_access(
+    user: DocumentReaderDep,
+    document_id: uuid.UUID,
+    body: UpdateDocumentAccessRequest,
+    service: DocumentServiceDep,
+    meta: RequestMetaDep,
+) -> ApiResponse[DocumentAccessOut]:
+    """Needs document:share, or being the document's uploader."""
+    return ApiResponse(
+        data=await service.set_access(
+            document_id, body, permissions=user.permissions, actor_id=user.user_id, meta=meta
+        )
+    )

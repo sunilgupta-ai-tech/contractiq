@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
-import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, Upload } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ShieldAlert, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import { cn } from "@/utils/cn";
 import { formatDate } from "@/utils/format";
 import { parseMarkdownTable } from "@/utils/markdown-table";
 import { ACCEPT_BY_FILE_TYPE } from "@/utils/validation";
+import { AccessCard } from "./access-card";
 import { fileTypeLabel } from "./file-type";
 
 /** A clause's text, or a real table when the clause is a table. */
@@ -79,7 +80,7 @@ export function ContractDetailView({ id }: { id: string }) {
     <>
       <div className="mb-6 animate-fade-up">
         <Link href="/documents" className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
-          <ArrowLeft className="h-3.5 w-3.5" /> Contracts
+          <ArrowLeft className="h-3.5 w-3.5" /> Documents
         </Link>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -129,6 +130,15 @@ export function ContractDetailView({ id }: { id: string }) {
       </div>
 
       {uploadError && <div className="mb-5"><ErrorState error={uploadError} /></div>}
+      {doc.injectionFlags > 0 && (
+        <div role="note" className="mb-5 flex items-start gap-2.5 rounded-xl border border-warn/30 bg-warn-soft px-4 py-3 text-[13px] text-ink">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <span>
+            <strong>{doc.injectionFlags} passage{doc.injectionFlags === 1 ? "" : "s"} in this document read like instructions to an AI.</strong>{" "}
+            The Assistant always treats document text as data, never as instructions — but check where this file came from.
+          </span>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)_320px]">
         {/* Outline */}
         <Card className="h-fit lg:sticky lg:top-20">
@@ -192,6 +202,7 @@ export function ContractDetailView({ id }: { id: string }) {
 
         {/* Inspector */}
         <div className="space-y-5 lg:col-span-2 2xl:col-span-1">
+          {!config.useDemoData && <AccessCard documentId={doc.id} />}
           <Card>
             <CardHeader eyebrow="Extracted" title="Key terms" />
             <dl className="divide-y divide-line">

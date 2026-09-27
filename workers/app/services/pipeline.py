@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -44,6 +44,7 @@ from app.document_processing.parser import (
 )
 from app.document_processing.pymupdf_parser import open_pdf, to_page_image
 from app.document_processing.xlsx_parser import parse_xlsx
+from app.guardrails.prompt_injection import scan_for_injection
 from app.llm.base import embedding_model_label
 from app.multimodal.transcriber import PageToTranscribe, is_weak_ocr
 from app.services.chunking_service import (
@@ -365,7 +366,22 @@ async def _chunk(ctx: StageContext) -> None:
             chunks_key=chunks_key,
             chunker_version=CHUNKER_VERSION,
             parent_chunks=len(result.parents),
+            injection=injection_report(c.text for c in result.children),
         )
+
+
+def injection_report(texts: Iterable[str]) -> dict[str, Any]:
+    """Phase 20: passages that read like instructions to an AI ("ignore
+    previous instructions", forged delimiters...). Nothing is removed — the
+    text is still the document's and is always sent to the model as data —
+    but the count is recorded and shown, so a planted document is visible."""
+    flagged, rules = 0, set()
+    for text in texts:
+        matched = scan_for_injection(text).matched_rules
+        if matched:
+            flagged += 1
+            rules.update(matched)
+    return {"chunks": flagged, "rules": sorted(rules)}
 
 
 async def _load_chunks(ctx: StageContext) -> ChunkingResult:

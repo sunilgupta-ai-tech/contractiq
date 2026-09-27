@@ -27,6 +27,7 @@ def tenant_filter(
     document_ids: Sequence[str] | None = None,
     version_ids: Sequence[str] | None = None,
     extra: Sequence[qm.Condition] = (),
+    exclude_document_ids: Sequence[str] = (),
 ) -> qm.Filter:
     """Build the mandatory retrieval filter.
 
@@ -43,4 +44,10 @@ def tenant_filter(
     if version_ids:
         must.append(qm.FieldCondition(key="version_id", match=qm.MatchAny(any=list(version_ids))))
     must.extend(extra)
-    return qm.Filter(must=must)
+    # Phase 20: documents the caller may not see within their own tenant.
+    must_not: list[qm.Condition] = []
+    if exclude_document_ids:
+        must_not.append(
+            qm.FieldCondition(key="document_id", match=qm.MatchAny(any=list(exclude_document_ids)))
+        )
+    return qm.Filter(must=must, must_not=must_not or None)

@@ -30,6 +30,16 @@ describe("library adapters", () => {
     expect([doc.fileType, doc.fileName]).toEqual(["IMAGE", "invoice.jpg"]);
   });
 
+  it("maps visibility and injection flags (Phase 20)", () => {
+    const doc = toDocument({
+      ...base,
+      visibility: "RESTRICTED",
+      latest_version: { ...base.latest_version!, injection_flags: 2 },
+    });
+    expect([doc.visibility, doc.injectionFlags]).toEqual(["RESTRICTED", 2]);
+    expect(toDocument(base).visibility).toBe("ORGANIZATION");
+  });
+
   it("treats documents from before file types as PDFs named by title", () => {
     const doc = toDocument({ ...base, latest_version: null });
     expect([doc.fileType, doc.fileName]).toEqual(["PDF", "Invoice September"]);

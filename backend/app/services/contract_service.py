@@ -59,6 +59,7 @@ from app.core.exceptions import ConflictError, NotFoundError, ServiceUnavailable
 from app.core.logging import get_logger
 from app.db.models import Document, DocumentStatus, DocumentVersion
 from app.db.repositories.document_repository import (
+    DocumentAccess,
     DocumentRepository,
     DocumentVersionRepository,
 )
@@ -546,13 +547,15 @@ class ContractService:
         tenant_id: uuid.UUID,
         resources: Resources,
         *,
+        access: DocumentAccess,
         analyzer_factory: Callable[[Resources], ContractAnalyzer] = ContractAnalyzer.from_resources,
     ) -> None:
         self.session = session
         self.tenant_id = tenant_id
         self.resources = resources
-        self.documents = DocumentRepository(session, tenant_id)
-        self.versions = DocumentVersionRepository(session, tenant_id)
+        # Phase 20: analysis only ever resolves documents the caller can see.
+        self.documents = DocumentRepository(session, tenant_id, access=access)
+        self.versions = DocumentVersionRepository(session, tenant_id, access=access)
         self._analyzer_factory = analyzer_factory
         self._analyzer: ContractAnalyzer | None = None
 

@@ -5,8 +5,10 @@ from app.db.models.conversation import Conversation, Message, MessageRole
 from app.db.models.document import (
     ContractType,
     Document,
+    DocumentGrant,
     DocumentStatus,
     DocumentVersion,
+    DocumentVisibility,
     FileType,
 )
 from app.db.models.evaluation import EvaluationRun
@@ -21,6 +23,8 @@ __all__ = [
     "ContractType",
     "Conversation",
     "Document",
+    "DocumentGrant",
+    "DocumentVisibility",
     "DocumentStatus",
     "DocumentVersion",
     "EvaluationRun",

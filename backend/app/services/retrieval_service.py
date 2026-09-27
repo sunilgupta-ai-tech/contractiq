@@ -28,9 +28,14 @@ if TYPE_CHECKING:
 
 
 class RetrievalService:
-    def __init__(self, resources: Resources) -> None:
+    def __init__(self, resources: Resources, *, hidden_document_ids: Sequence[str] = ()) -> None:
+        """`hidden_document_ids`: documents of the tenant the asking user may
+        not see (Phase 20). They are excluded inside the vector search itself,
+        and parents of theirs are dropped, so none of their text can reach
+        the model."""
         self.resources = resources
         self.settings = resources.settings
+        self.hidden = frozenset(hidden_document_ids)
 
     async def retrieve(
         self,
@@ -55,6 +60,7 @@ class RetrievalService:
                 embedding_model=embedding_model_label(provider),
                 document_ids=document_ids,
                 version_ids=version_ids,
+                exclude_document_ids=sorted(self.hidden),
             ),
             prefetch=self.settings.retrieval_prefetch,
             limit=limit,
@@ -67,4 +73,4 @@ class RetrievalService:
             tenant_id=tenant_id,
             parent_ids=list(dict.fromkeys(parent_ids)),
         )
-        return {p["chunk_id"]: p for p in payloads}
+        return {p["chunk_id"]: p for p in payloads if p.get("document_id") not in self.hidden}

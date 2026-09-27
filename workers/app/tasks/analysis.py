@@ -15,6 +15,7 @@ from app.core.exceptions import NotFoundError
 from app.core.logging import get_logger
 from app.db.models import DocumentStatus
 from app.db.repositories.document_repository import (
+    DocumentAccess,
     DocumentRepository,
     DocumentVersionRepository,
 )
@@ -35,8 +36,14 @@ async def analyze_version(
     try:
         async with resources.db.session_factory() as session:
             await bind_tenant(session, tenant)
-            document = await DocumentRepository(session, tenant).get(uuid.UUID(document_id))
-            version = await DocumentVersionRepository(session, tenant).get(uuid.UUID(version_id))
+            # The worker serves no user: it sees every document of the tenant.
+            access = DocumentAccess.system()
+            document = await DocumentRepository(session, tenant, access=access).get(
+                uuid.UUID(document_id)
+            )
+            version = await DocumentVersionRepository(session, tenant, access=access).get(
+                uuid.UUID(version_id)
+            )
     except NotFoundError:  # deleted since the job was queued: nothing to do, don't retry
         return {"status": "skipped", "version_id": version_id}
     if version.document_id != document.id or version.status is not DocumentStatus.COMPLETED:

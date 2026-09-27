@@ -30,6 +30,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from fastapi import UploadFile
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,26 +38,36 @@ from app.core.exceptions import (
     ConflictError,
     DuplicateDocumentError,
     FileTooLargeError,
+    ForbiddenError,
     InvalidFileError,
+    NotFoundError,
     ServiceUnavailableError,
 )
 from app.core.logging import get_logger
+from app.core.security import Permission
 from app.db.models import (
     ContractType,
     Document,
+    DocumentGrant,
     DocumentStatus,
     DocumentVersion,
+    DocumentVisibility,
     FileType,
     JobStatus,
     JobType,
     ProcessingJob,
+    Role,
+    User,
 )
 from app.db.repositories.document_repository import (
+    DocumentAccess,
     DocumentRepository,
     DocumentSort,
     DocumentVersionRepository,
     JobRepository,
 )
+from app.db.repositories.role_repository import RoleRepository
+from app.db.repositories.user_repository import UserRepository
 from app.document_processing.formats import (
     SUPPORTED_HINT,
     UploadFormat,
@@ -66,12 +77,18 @@ from app.document_processing.formats import (
 from app.queue import enqueue_document_processing
 from app.schemas.common import Page
 from app.schemas.document import (
+    AccessGrantOut,
+    DirectoryOut,
+    DirectoryRole,
+    DirectoryUser,
+    DocumentAccessOut,
     DocumentDetail,
     DocumentFacets,
     DocumentOut,
     DocumentStatusOut,
     DocumentVersionOut,
     JobOut,
+    UpdateDocumentAccessRequest,
     UploadResult,
 )
 from app.services.audit_service import RequestMeta, record_audit
@@ -157,6 +174,9 @@ class UploadMetadata:
     counterparty: str | None = None
     document_id: uuid.UUID | None = None  # set to upload a new version of an existing document
     version_label: str | None = None
+    # Phase 20: RESTRICTED keeps a new document private to the uploader (and
+    # document:read_all holders) until access is granted.
+    visibility: DocumentVisibility = DocumentVisibility.ORGANIZATION
 
 
 # --- Response builders -----------------------------------------------------------
@@ -175,6 +195,7 @@ def to_document_out(document: Document) -> DocumentOut:
         title=document.title,
         contract_type=document.contract_type,
         file_type=document.file_type,
+        visibility=document.visibility,
         counterparty=document.counterparty,
         status=document.status,
         effective_date=document.effective_date,
@@ -201,12 +222,21 @@ def to_document_detail(document: Document) -> DocumentDetail:
 class DocumentService:
     """All operations are scoped to the caller's tenant (from the signed token)."""
 
-    def __init__(self, session: AsyncSession, tenant_id: uuid.UUID, resources: Resources) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        tenant_id: uuid.UUID,
+        resources: Resources,
+        *,
+        access: DocumentAccess,
+    ) -> None:
         self.session = session
         self.tenant_id = tenant_id
         self.resources = resources
-        self.documents = DocumentRepository(session, tenant_id)
-        self.versions = DocumentVersionRepository(session, tenant_id)
+        self.access = access
+        # Phase 20: every read goes through the caller's document access.
+        self.documents = DocumentRepository(session, tenant_id, access=access)
+        self.versions = DocumentVersionRepository(session, tenant_id, access=access)
         self.jobs = JobRepository(session, tenant_id)
 
     async def upload(
@@ -250,6 +280,7 @@ class DocumentService:
                     counterparty=(metadata.counterparty or None),
                     file_type=fmt.file_type,
                     uploaded_by_id=actor_id,
+                    visibility=metadata.visibility,
                     status=DocumentStatus.QUEUED,
                     tags=[],
                 )
@@ -383,6 +414,10 @@ class DocumentService:
         duplicate = await self.versions.find_live_duplicate(sha256)
         if duplicate is None:
             return
+        if not await self.documents.is_visible(duplicate.document_id):
+            # A restricted document the caller cannot see (Phase 20): the
+            # file is still a duplicate, but where it lives stays private.
+            raise DuplicateDocumentError()
         document = await self.documents.get_with_versions(duplicate.document_id)
         raise DuplicateDocumentError(
             details={
@@ -412,7 +447,127 @@ class DocumentService:
         )
 
     async def get_job(self, job_id: uuid.UUID) -> JobOut:
-        return JobOut.model_validate(await self.jobs.get(job_id))
+        job = await self.jobs.get(job_id)
+        # Phase 20: a job reveals its document's progress; only to those
+        # who may see the document.
+        if job.document_version_id is not None:
+            await self.versions.get(job.document_version_id)
+        return JobOut.model_validate(job)
+
+    # --- Document access (Phase 20) ---------------------------------------------------
+
+    def _can_manage(self, document: Document, permissions: frozenset[Permission]) -> bool:
+        return Permission.DOCUMENT_SHARE in permissions or (
+            document.uploaded_by_id is not None and document.uploaded_by_id == self.access.user_id
+        )
+
+    async def get_access(
+        self, document_id: uuid.UUID, *, permissions: frozenset[Permission]
+    ) -> DocumentAccessOut:
+        document = await self.documents.get(document_id)  # 404 unless visible
+        grants = (
+            await self.session.execute(
+                select(DocumentGrant, User, Role)
+                .outerjoin(User, User.id == DocumentGrant.user_id)
+                .outerjoin(Role, Role.id == DocumentGrant.role_id)
+                .where(DocumentGrant.document_id == document.id)
+                .order_by(DocumentGrant.created_at)
+            )
+        ).all()
+        owner = (
+            await self.session.get(User, document.uploaded_by_id)
+            if document.uploaded_by_id
+            else None
+        )
+        return DocumentAccessOut(
+            visibility=document.visibility,
+            owner_id=document.uploaded_by_id,
+            owner_name=owner.full_name if owner else None,
+            grants=[
+                AccessGrantOut(kind="user", id=user.id, name=user.full_name, email=user.email)
+                if user is not None
+                else AccessGrantOut(kind="role", id=role.id, name=role.name)
+                for _, user, role in grants
+            ],
+            can_manage=self._can_manage(document, permissions),
+        )
+
+    async def set_access(
+        self,
+        document_id: uuid.UUID,
+        data: UpdateDocumentAccessRequest,
+        *,
+        permissions: frozenset[Permission],
+        actor_id: uuid.UUID,
+        meta: RequestMeta,
+    ) -> DocumentAccessOut:
+        document = await self.documents.get(document_id)
+        if not self._can_manage(document, permissions):
+            raise ForbiddenError("You cannot change who can see this document.")
+        user_ids, role_ids = set(data.user_ids), set(data.role_ids)
+        if data.visibility is DocumentVisibility.ORGANIZATION:
+            user_ids, role_ids = set(), set()
+        # Only people and roles of this organization (RLS agrees).
+        users = UserRepository(self.session, self.tenant_id)
+        if await users.count_ids(list(user_ids)) != len(user_ids):
+            raise NotFoundError("One or more of the selected users were not found.")
+        roles = RoleRepository(self.session, self.tenant_id)
+        for role_id in role_ids:
+            await roles.get(role_id)
+
+        document.visibility = data.visibility
+        await self.session.execute(
+            delete(DocumentGrant).where(DocumentGrant.document_id == document.id)
+        )
+        for user_id in user_ids:
+            self.session.add(
+                DocumentGrant(
+                    organization_id=self.tenant_id,
+                    document_id=document.id,
+                    user_id=user_id,
+                    granted_by_id=actor_id,
+                )
+            )
+        for role_id in role_ids:
+            self.session.add(
+                DocumentGrant(
+                    organization_id=self.tenant_id,
+                    document_id=document.id,
+                    role_id=role_id,
+                    granted_by_id=actor_id,
+                )
+            )
+        record_audit(
+            self.session,
+            tenant_id=self.tenant_id,
+            actor_user_id=actor_id,
+            action="document.access",
+            resource_type="document",
+            resource_id=document.id,
+            meta=meta,
+            metadata={
+                "visibility": data.visibility.value,
+                "users": len(user_ids),
+                "roles": len(role_ids),
+            },
+        )
+        await self.session.commit()
+        return await self.get_access(document.id, permissions=permissions)
+
+    async def directory(self) -> DirectoryOut:
+        """Active colleagues and roles, to share a document with."""
+        users = (
+            await self.session.execute(
+                select(User)
+                .where(User.organization_id == self.tenant_id, User.is_active.is_(True))
+                .order_by(func.lower(User.full_name))
+            )
+        ).scalars()
+        roles = await RoleRepository(self.session, self.tenant_id).list()
+        return DirectoryOut(
+            users=[DirectoryUser(id=u.id, full_name=u.full_name, email=u.email) for u in users],
+            roles=[DirectoryRole(id=r.id, name=r.name) for r in roles],
+        )
 
     async def delete(
         self, document_id: uuid.UUID, *, actor_id: uuid.UUID, meta: RequestMeta

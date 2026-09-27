@@ -34,6 +34,7 @@ export interface ApiVersion {
   is_scanned: boolean | null;
   status: DocumentStatus;
   error_message: string | null;
+  injection_flags?: number;
   created_at: string;
 }
 
@@ -42,6 +43,7 @@ export interface ApiDocument {
   title: string;
   contract_type: ContractType;
   file_type?: FileType;
+  visibility?: "ORGANIZATION" | "RESTRICTED";
   counterparty: string | null;
   status: DocumentStatus;
   effective_date: string | null;
@@ -163,6 +165,8 @@ export function toDocument(d: ApiDocument): ContractDocument {
     contractType: d.contract_type,
     fileType: d.file_type ?? "PDF",
     fileName: latest?.original_filename ?? d.title,
+    visibility: d.visibility ?? "ORGANIZATION",
+    injectionFlags: latest?.injection_flags ?? 0,
     status: d.status,
     progress: PROGRESS[d.status] ?? 0,
     pages: latest?.page_count ?? 0,
