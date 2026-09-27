@@ -56,8 +56,26 @@ eval-baseline: ## Store this run as the regression baseline (backend/eval/baseli
 	docker compose exec backend python -m app.evaluation run --out /tmp/eval-reports
 	docker compose cp backend:/tmp/eval-reports/report.json backend/eval/baseline/report.json
 
+ops-status: ## Jobs, queue, worker, vectors and snapshots at a glance
+	docker compose exec backend python -m app.ops status
+
+recover-jobs: ## Requeue jobs a crash or Redis loss interrupted (the worker also does this every 5 min)
+	docker compose exec backend python -m app.ops recover
+
+reindex: ## Rebuild all vectors from stored chunks (after losing Qdrant)
+	docker compose exec backend python -m app.ops reindex --all
+
+backup-db: ## Dump PostgreSQL to backups/postgres/ (keeps 14 days)
+	scripts/backup-postgres.sh
+
+restore-db: ## Restore a dump (stop backend/worker first): make restore-db file=backups/postgres/x.dump
+	scripts/restore-postgres.sh "$(file)" --yes
+
+qdrant-snapshot: ## Snapshot the vector collection into storage (backups/qdrant/)
+	docker compose exec backend python -m app.ops snapshot
+
 lint: ## Lint backend and frontend
 	cd backend && ruff check app tests
 	cd frontend && npm run lint
 
-.PHONY: help env up down logs ps infra migrate migration backend-dev worker-dev frontend-dev test platform-admin eval eval-baseline lint
+.PHONY: help env up down logs ps infra migrate migration backend-dev worker-dev frontend-dev test platform-admin eval eval-baseline ops-status recover-jobs reindex backup-db restore-db qdrant-snapshot lint

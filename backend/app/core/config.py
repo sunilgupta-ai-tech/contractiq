@@ -143,6 +143,18 @@ class Settings(BaseSettings):
     # Photos are scaled down to this long side before OCR (bounds OCR time).
     max_image_side_px: int = 4000
 
+    # --- Reliability (worker, Phase 23) ---
+    # Recovery sweep: PostgreSQL is the source of truth for background work,
+    # so jobs a crash or a Redis loss left behind are found there and queued
+    # again. A job is only considered lost after it has been idle this long
+    # AND arq no longer holds it (queued, deferred or running).
+    job_recovery_enabled: bool = True
+    job_recovery_interval_min: int = 5
+    job_stale_pending_s: int = 15 * 60
+    job_stale_running_s: int = 40 * 60  # longer than the worker's 30-minute job timeout
+    # Starts of one job (arq retries included) before it is given up as FAILED.
+    job_recovery_max_attempts: int = 5
+
     # --- Chunking (worker, Phase 5) ---
     # Sizes are *estimated* tokens (~4 chars each; see app/chunking/tokens.py).
     chunk_max_tokens: int = 400  # child chunk: about one clause

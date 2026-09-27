@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from arq import cron
 from arq.connections import RedisSettings
 from prometheus_client import start_http_server
 
@@ -26,6 +27,7 @@ from .tasks.document_processing import process_document
 from .tasks.embedding import reembed_tenant
 from .tasks.indexing import delete_document_vectors
 from .tasks.organization import delete_organization
+from .tasks.recovery import recover_jobs
 
 settings = get_settings()
 configure_logging(settings.log_level, settings.log_json)
@@ -64,3 +66,19 @@ class WorkerSettings:
     max_tries = 3
     keep_result = 60 * 60 * 24
     health_check_interval = 30
+    # Phase 23: requeue work a crash or a Redis loss interrupted. Scheduled
+    # runs happen on one worker at a time; the extra sweep at startup (so a
+    # restarted worker picks up lost jobs at once) may overlap another, which
+    # is safe because the sweep locks its rows with SKIP LOCKED.
+    cron_jobs: ClassVar = (
+        [
+            cron(
+                recover_jobs,
+                minute=set(range(0, 60, max(1, settings.job_recovery_interval_min))),
+                run_at_startup=True,
+                timeout=5 * 60,
+            )
+        ]
+        if settings.job_recovery_enabled
+        else []
+    )

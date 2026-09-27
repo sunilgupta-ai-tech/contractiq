@@ -42,3 +42,6 @@ eval-reports/
 # Machine-specific compose overrides (e.g. port remapping)
 docker-compose.override.yml
 .gstack/
+
+# Phase 23: database dumps hold every organization's data — never commit them.
+backups/

@@ -125,6 +125,11 @@ DOCUMENTS_PROCESSED = Counter(
     "Document versions processed by the worker (completed, rejected, failed).",
     ["outcome"],
 )
+JOBS_RECOVERED = Counter(
+    "contractiq_jobs_recovered_total",
+    "Interrupted background jobs found by the recovery sweep (requeued or given up).",
+    ["kind", "action"],
+)
 PIPELINE_STAGE_LATENCY = Histogram(
     "contractiq_pipeline_stage_duration_seconds",
     "Worker ingestion stage latency (parse, ocr, describe, chunk, embed, index).",
