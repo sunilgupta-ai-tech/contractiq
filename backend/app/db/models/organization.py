@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import DateTime, Enum, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -12,13 +14,51 @@ if TYPE_CHECKING:
     from app.db.models.user import User
 
 
+class OrganizationStatus(StrEnum):
+    """Set by the platform console (Phase 18). A suspended organization's
+    users cannot sign in, and their open sessions end at once."""
+
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+
+
+class Plan(StrEnum):
+    FREE = "FREE"
+    STARTER = "STARTER"
+    BUSINESS = "BUSINESS"
+    ENTERPRISE = "ENTERPRISE"
+
+
 class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A tenant. Every contract, conversation and audit record belongs to one."""
+    """A tenant. Every document, conversation and audit record belongs to one."""
 
     __tablename__ = "organizations"
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[OrganizationStatus] = mapped_column(
+        Enum(OrganizationStatus, name="organization_status"),
+        default=OrganizationStatus.ACTIVE,
+        server_default=OrganizationStatus.ACTIVE.value,
+        nullable=False,
+        index=True,
+    )
+    suspended_reason: Mapped[str | None] = mapped_column(String(300))
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The plan sets the default limits (app/services/plans.py); the platform
+    # admin may override each one. NULL = unlimited.
+    plan: Mapped[Plan] = mapped_column(
+        Enum(Plan, name="organization_plan"),
+        default=Plan.FREE,
+        server_default=Plan.FREE.value,
+        nullable=False,
+    )
+    max_users: Mapped[int | None] = mapped_column(Integer)
+    max_documents: Mapped[int | None] = mapped_column(Integer)
+    max_storage_mb: Mapped[int | None] = mapped_column(Integer)
 
     users: Mapped[list[User]] = relationship(back_populates="organization")
+
+    @property
+    def is_active(self) -> bool:
+        return self.status is OrganizationStatus.ACTIVE

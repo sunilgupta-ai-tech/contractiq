@@ -29,7 +29,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.core.exceptions import ConflictError, ServiceUnavailableError, UnauthorizedError
+from app.core.exceptions import (
+    ConflictError,
+    OrganizationSuspendedError,
+    ServiceUnavailableError,
+    UnauthorizedError,
+)
 from app.core.logging import get_logger
 from app.core.security import (
     SystemRole,
@@ -38,7 +43,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.db.models import SYSTEM_ROLE_IDS, Organization, User
+from app.db.models import SYSTEM_ROLE_IDS, Organization, Plan, User
 from app.db.repositories.user_repository import (
     find_user_by_email,
     find_user_in_tenant,
@@ -46,6 +51,7 @@ from app.db.repositories.user_repository import (
 )
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenPair
 from app.services.audit_service import RequestMeta, record_audit
+from app.services.plans import apply_plan
 
 logger = get_logger(__name__)
 
@@ -93,6 +99,7 @@ class AuthService:
             raise ConflictError(EMAIL_TAKEN)
 
         org = Organization(name=data.organization_name, slug=slugify(data.organization_name))
+        apply_plan(org, Plan(self.settings.default_plan))
         self.session.add(org)
         await self.session.flush()
         user = User(
@@ -143,9 +150,13 @@ class AuthService:
             raise UnauthorizedError(INVALID_CREDENTIALS)
 
         # Checked only after the password, so the response for a disabled
-        # account does not tell a guesser that the password was right.
-        if not await self._is_enabled(user):
+        # account does not tell a guesser that the password was right. A
+        # suspended organization is named (Phase 18): the person has a
+        # valid account and needs to know why they cannot get in.
+        if not user.is_active:
             raise UnauthorizedError(INVALID_CREDENTIALS)
+        if not await self._org_active(user):
+            raise OrganizationSuspendedError()
 
         user.last_login_at = datetime.now(UTC)
         record_audit(
@@ -196,8 +207,9 @@ class AuthService:
             logger.info("logout", extra={"user_id": claims.get("sub")})
 
     async def _is_enabled(self, user: User) -> bool:
-        if not user.is_active:
-            return False
+        return user.is_active and await self._org_active(user)
+
+    async def _org_active(self, user: User) -> bool:
         org = await get_organization(self.session, user.organization_id)
         return org is not None and org.is_active
 

@@ -26,6 +26,7 @@ TokenType = Literal["access", "refresh"]
 # Tokens say who they are for, so a tenant token is never accepted by the
 # platform (super admin) API or the other way round (Phase 18).
 TENANT_AUDIENCE = "docunexa:tenant"
+PLATFORM_AUDIENCE = "docunexa:platform"
 
 
 class SystemRole(StrEnum):
@@ -181,6 +182,57 @@ def decode_token(
             algorithms=[settings.jwt_algorithm],
             audience=TENANT_AUDIENCE,
             options={"require": ["sub", "tid", "aud", "role", "rid", "perms", "type", "ts", "exp"]},
+        )
+    except jwt.PyJWTError as exc:
+        raise UnauthorizedError("Invalid or expired token.") from exc
+    if claims["type"] != expected_type:
+        raise UnauthorizedError("Invalid token type.")
+    return claims
+
+
+# --- Platform console tokens (Phase 18) ---------------------------------------------
+# A separate audience and claim set: a tenant token is never a platform token,
+# and a platform token carries no tenant, so it opens no tenant data.
+
+
+def create_platform_token(
+    settings: Settings,
+    *,
+    subject: str,
+    role: str,
+    token_type: TokenType = "access",  # noqa: S107
+) -> str:
+    now = datetime.now(UTC)
+    lifetime = (
+        timedelta(minutes=settings.access_token_expire_minutes)
+        if token_type == "access"  # noqa: S105
+        else timedelta(days=1)  # platform sessions are short: at most a day
+    )
+    claims: dict[str, Any] = {
+        "sub": subject,
+        "aud": PLATFORM_AUDIENCE,
+        "prole": role,
+        "type": token_type,
+        "iat": now,
+        "ts": int(now.timestamp() * 1000),
+        "exp": now + lifetime,
+        "jti": uuid.uuid4().hex,
+    }
+    return jwt.encode(
+        claims, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
+    )
+
+
+def decode_platform_token(
+    settings: Settings, token: str, expected_type: TokenType = "access"
+) -> dict[str, Any]:
+    try:
+        claims: dict[str, Any] = jwt.decode(
+            token,
+            settings.jwt_secret_key.get_secret_value(),
+            algorithms=[settings.jwt_algorithm],
+            audience=PLATFORM_AUDIENCE,
+            options={"require": ["sub", "aud", "prole", "type", "ts", "exp"]},
         )
     except jwt.PyJWTError as exc:
         raise UnauthorizedError("Invalid or expired token.") from exc

@@ -74,6 +74,7 @@ from app.schemas.document import (
     UploadResult,
 )
 from app.services.audit_service import RequestMeta, record_audit
+from app.services.plans import ensure_can_upload
 from app.storage import build_object_key, document_prefix
 from app.vectorstore.indexing import delete_document_points
 
@@ -218,6 +219,12 @@ class DocumentService:
         upload_format: UploadFormat | None = None,
     ) -> UploadResult:
         fmt = upload_format or format_for_storage_key(STORED_FILENAME)
+        await ensure_can_upload(
+            self.session,
+            self.tenant_id,
+            new_document=metadata.document_id is None,
+            size_bytes=len(data),
+        )
         sha256 = hashlib.sha256(data).hexdigest()
         duplicate = await self.versions.find_live_duplicate(sha256)
         if duplicate is not None:

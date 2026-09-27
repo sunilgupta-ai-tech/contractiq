@@ -74,3 +74,25 @@ async def token_is_current(redis: Redis | None, *, user_id: str, tenant_id: str,
         logger.warning("session_check_skipped", extra={"error": repr(exc)})
         return True
     return all(mark is None or ts > int(mark) for mark in (user_mark, org_mark))
+
+
+# --- Platform console (Phase 18) ----------------------------------------------------
+
+
+def _platform_key(admin_id: uuid.UUID | str) -> str:
+    return f"ciq:auth:valid-after:platform:{admin_id}"
+
+
+async def revoke_platform_sessions(redis: Redis | None, admin_id: uuid.UUID, *, ttl_s: int) -> None:
+    await _mark(redis, _platform_key(admin_id), ttl_s)
+
+
+async def platform_token_is_current(redis: Redis | None, *, admin_id: str, ts: int) -> bool:
+    if redis is None:
+        return True
+    try:
+        mark = await redis.get(_platform_key(admin_id))
+    except RedisError as exc:
+        logger.warning("session_check_skipped", extra={"error": repr(exc)})
+        return True
+    return mark is None or ts > int(mark)

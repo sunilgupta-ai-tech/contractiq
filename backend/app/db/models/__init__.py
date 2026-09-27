@@ -11,7 +11,8 @@ from app.db.models.document import (
 )
 from app.db.models.evaluation import EvaluationRun
 from app.db.models.job import JobStatus, JobType, ProcessingJob
-from app.db.models.organization import Organization
+from app.db.models.organization import Organization, OrganizationStatus, Plan
+from app.db.models.platform import PlatformAdmin, PlatformAuditLog, PlatformRole
 from app.db.models.role import SYSTEM_ROLE_IDS, Role
 from app.db.models.user import User
 
@@ -29,6 +30,11 @@ __all__ = [
     "Message",
     "MessageRole",
     "Organization",
+    "OrganizationStatus",
+    "Plan",
+    "PlatformAdmin",
+    "PlatformAuditLog",
+    "PlatformRole",
     "ProcessingJob",
     "Role",
     "SYSTEM_ROLE_IDS",

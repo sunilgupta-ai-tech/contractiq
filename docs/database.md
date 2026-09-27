@@ -6,6 +6,8 @@ PostgreSQL 16, async SQLAlchemy 2, Alembic migrations (`backend/migrations`).
 |---|---|---|
 | `organizations` | Tenants | — |
 | `users` | Accounts, bcrypt hash, `role_id` → `roles` | ✓ |
+| `organizations` | Phase 18: `status` (ACTIVE / SUSPENDED) with reason and time, `plan`, `max_users`, `max_documents`, `max_storage_mb` (NULL = unlimited) | ✓ (own) |
+| `platform_admins`, `platform_audit_logs` | Phase 18: the operator side; no tenant grant | ✗ (unreachable) |
 | `roles` | Phase 17: system roles (Admin, Manager, Employee, Viewer; `organization_id` NULL, fixed IDs) and each organization's custom roles; `permissions` is a JSON list from the code's catalog | ✓ (own + system) |
 | `documents` | Logical contract, current status, current version | ✓ |
 | `document_versions` | Each upload/amendment: storage key, sha256, pages, status, extraction metadata | ✓ |

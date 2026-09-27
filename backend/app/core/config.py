@@ -125,6 +125,11 @@ class Settings(BaseSettings):
     transcribe_below_ocr_confidence: float = 70.0
     max_transcribed_pages_per_document: int = 20
 
+    # --- Platform console (Phase 18) ---
+    # Plan given to organizations that sign up themselves (FREE, STARTER,
+    # BUSINESS, ENTERPRISE); the platform admin can change it later.
+    default_plan: Literal["FREE", "STARTER", "BUSINESS", "ENTERPRISE"] = "FREE"
+
     # --- Word, Excel and image uploads (worker, Phase 16) ---
     # Bounds the work (and embedding cost) of a huge workbook.
     max_spreadsheet_cells: int = 200_000

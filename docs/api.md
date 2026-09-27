@@ -15,6 +15,7 @@ Error: `{"success": false, "error": {"code": "…", "message": "…", "details":
 | GET | `/users/me` | 2 | live — any authenticated user |
 | GET, POST | `/users` | 2 | live — ADMIN only (`user:manage`), own organization only |
 | PATCH | `/users/{id}` | 2, 17 | live — `user:manage`; name, `role_id`, active status (not your own role/status, not a user with more access than you); revokes that user's tokens at once |
+| * | `/platform/...` | 18 | live — platform console, separate sign-in and token audience; see [platform.md](platform.md) |
 | GET | `/permissions` | 17 | live — the permission catalog (key, group, label, description) |
 | GET | `/roles` | 17 | live — `user:manage` or `role:manage`; system roles + the organization's custom roles, with member counts |
 | POST / PATCH / DELETE | `/roles`, `/roles/{id}` | 17 | live — `role:manage`; custom roles only, permissions within your own, never the role you hold; delete only when unused (409 otherwise); a permission change revokes the organization's tokens |

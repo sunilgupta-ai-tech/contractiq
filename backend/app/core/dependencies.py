@@ -20,8 +20,9 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.logging import tenant_id_ctx
 from app.core.resources import Resources
-from app.core.security import Permission, decode_token, parse_permissions
-from app.core.sessions import token_is_current
+from app.core.security import Permission, decode_platform_token, decode_token, parse_permissions
+from app.core.sessions import platform_token_is_current, token_is_current
+from app.db.models import PlatformRole
 from app.db.tenancy import bind_tenant
 from app.guardrails.input_guardrails import (
     RateLimiter,
@@ -35,6 +36,8 @@ from app.services.comparison_service import ComparisonService
 from app.services.contract_service import ContractService
 from app.services.document_service import DocumentService
 from app.services.health_service import HealthService
+from app.services.platform_auth_service import PlatformAuthService
+from app.services.platform_service import PlatformService
 from app.services.query_service import QueryService
 from app.services.risk_service import RiskService
 from app.services.role_service import RoleService
@@ -314,3 +317,71 @@ QueryRateLimitDep = Annotated[None, Depends(rate_limit("query"))]
 AnalysisRateLimitDep = Annotated[None, Depends(rate_limit("analysis"))]
 UploadRateLimitDep = Annotated[None, Depends(rate_limit("upload"))]
 LoginThrottleDep = Annotated[LoginThrottle, Depends(get_login_throttle)]
+
+
+# --- Platform console (Phase 18) ------------------------------------------------------
+# A separate principal, audience and set of dependencies: nothing here accepts
+# a tenant token, and nothing in the tenant API accepts a platform token.
+
+
+@dataclass(frozen=True)
+class PlatformPrincipal:
+    admin_id: uuid.UUID
+    role: PlatformRole
+
+
+async def get_platform_admin(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> PlatformPrincipal:
+    if credentials is None:
+        raise UnauthorizedError()
+    claims = decode_platform_token(settings, credentials.credentials)
+    try:
+        principal = PlatformPrincipal(uuid.UUID(claims["sub"]), PlatformRole(claims["prole"]))
+    except ValueError as exc:
+        raise UnauthorizedError("Invalid or expired token.") from exc
+    resources: Resources | None = getattr(request.app.state, "resources", None)
+    if resources is not None and not await platform_token_is_current(
+        resources.redis, admin_id=claims["sub"], ts=int(claims["ts"])
+    ):
+        raise UnauthorizedError(STALE_SESSION)
+    return principal
+
+
+def require_super_admin(
+    admin: Annotated[PlatformPrincipal, Depends(get_platform_admin)],
+) -> PlatformPrincipal:
+    """Changes need SUPER_ADMIN; SUPPORT is read-only."""
+    if admin.role is not PlatformRole.SUPER_ADMIN:
+        raise ForbiddenError("Only a super admin can do this.")
+    return admin
+
+
+def get_platform_auth_service(
+    resources: Annotated[Resources, Depends(get_resources)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PlatformAuthService:
+    return PlatformAuthService(session, resources.redis, settings)
+
+
+def get_platform_service(
+    request: Request,
+    _: Annotated[PlatformPrincipal, Depends(get_platform_admin)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> PlatformService:
+    """Unbound session on purpose: the console sees every organization."""
+    resources: Resources | None = getattr(request.app.state, "resources", None)
+    return PlatformService(
+        session,
+        redis=resources.redis if resources else None,
+        revoke_ttl_s=_revoke_ttl_s(request),
+    )
+
+
+PlatformAdminDep = Annotated[PlatformPrincipal, Depends(get_platform_admin)]
+SuperAdminDep = Annotated[PlatformPrincipal, Depends(require_super_admin)]
+PlatformAuthServiceDep = Annotated[PlatformAuthService, Depends(get_platform_auth_service)]
+PlatformServiceDep = Annotated[PlatformService, Depends(get_platform_service)]

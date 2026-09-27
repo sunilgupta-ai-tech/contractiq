@@ -38,6 +38,8 @@ class ErrorCode(StrEnum):
     DOCUMENT_PROCESSING_FAILED = "DOCUMENT_PROCESSING_FAILED"
     PROMPT_INJECTION_DETECTED = "PROMPT_INJECTION_DETECTED"
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    PLAN_LIMIT_REACHED = "PLAN_LIMIT_REACHED"
+    ORGANIZATION_SUSPENDED = "ORGANIZATION_SUSPENDED"
 
 
 class AppError(Exception):
@@ -87,6 +89,21 @@ class ConflictError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = ErrorCode.CONFLICT
     message = "The resource already exists."
+
+
+class PlanLimitError(AppError):
+    """The organization's plan does not allow more users, documents or
+    storage (Phase 18). The platform admin raises the limit or the plan."""
+
+    status_code = status.HTTP_403_FORBIDDEN
+    code = ErrorCode.PLAN_LIMIT_REACHED
+    message = "Your organization has reached its plan limit."
+
+
+class OrganizationSuspendedError(AppError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = ErrorCode.ORGANIZATION_SUSPENDED
+    message = "Your organization's access is suspended. Contact support."
 
 
 class InvalidFileError(AppError):

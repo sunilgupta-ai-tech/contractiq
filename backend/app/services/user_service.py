@@ -25,6 +25,7 @@ from app.schemas.common import Page
 from app.schemas.user import CreateUserRequest, MeOut, UpdateUserRequest, UserOut
 from app.services.audit_service import RequestMeta, record_audit
 from app.services.auth_service import EMAIL_TAKEN
+from app.services.plans import ensure_can_add_user
 
 BEYOND_OWN = "You cannot give a role more access than your own."
 
@@ -91,6 +92,7 @@ class UserService:
         # tenant-scoped. It reveals only that the address is taken.
         if await find_user_by_email(self.session, data.email):
             raise ConflictError(EMAIL_TAKEN)
+        await ensure_can_add_user(self.session, self.tenant_id)
         try:
             user = await self.users.add(
                 User(
@@ -146,6 +148,8 @@ class UserService:
         if "full_name" in changes:
             user.full_name = changes["full_name"]
         if "is_active" in changes:
+            if changes["is_active"] and not user.is_active:
+                await ensure_can_add_user(self.session, self.tenant_id)
             user.is_active = changes["is_active"]
         record_audit(
             self.session,

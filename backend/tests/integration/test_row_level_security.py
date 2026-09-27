@@ -84,8 +84,8 @@ async def test_the_tenant_role_without_a_tenant_sees_nothing(api, cleanup) -> No
 
 
 async def test_every_tenant_table_is_protected() -> None:
-    """A new table with organization_id must get a policy (migration
-    7c1d4e2a9b30), or tenant sessions would be refused access to it."""
+    """A table with organization_id must either have a tenant policy
+    (migration 7c1d4e2a9b30) or be out of the tenant role's reach."""
     db = Database(Settings())
     try:
         async with db.engine.connect() as conn:
@@ -107,8 +107,22 @@ async def test_every_tenant_table_is_protected() -> None:
                     )
                 ).scalars()
             )
+            # Operator tables (platform_audit_logs, Phase 18) reference an
+            # organization without belonging to one: the tenant role must
+            # then have no access to them at all.
+            unreachable = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT c.relname FROM pg_class c "
+                            "WHERE c.relkind = 'r' AND NOT has_table_privilege("
+                            "'app_tenant', c.oid, 'SELECT, INSERT, UPDATE, DELETE')"
+                        )
+                    )
+                ).scalars()
+            )
         assert tables, "no tenant tables found"
-        assert set(tables) <= protected, set(tables) - protected
+        assert set(tables) <= protected | unreachable, set(tables) - protected - unreachable
     finally:
         await db.dispose()
 
