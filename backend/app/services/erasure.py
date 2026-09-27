@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any
 from qdrant_client.http import models as qm
 
 from app.core.logging import get_logger
+from app.storage import document_prefix
+from app.vectorstore.indexing import delete_document_points
 from app.vectorstore.qdrant import tenant_filter
 
 if TYPE_CHECKING:
@@ -37,6 +39,36 @@ async def erase_tenant_data(resources: Resources, tenant_id: str) -> dict[str, A
     await resources.storage.delete_prefix(f"tenants/{tenant_id}/")
     removed = await delete_redis_prefix(resources.redis, f"ciq:{tenant_id}:")
     logger.info("tenant_data_erased", extra={"tenant_id": tenant_id, "cache_keys": removed})
+    return {"cache_keys": removed}
+
+
+# Cache namespaces holding content derived from documents: answers (text),
+# captions and table summaries (text), embeddings (vectors). Entries are
+# keyed by content hash, not by document, so a document's deletion clears
+# the organization's whole namespace: the price is paying again for a few
+# captions or embeddings later, never keeping a deleted document's content.
+DOCUMENT_DERIVED_CACHES = ("answer", "mm", "emb")
+
+
+async def erase_document_data(
+    resources: Resources, tenant_id: str, document_id: str
+) -> dict[str, Any]:
+    """Phase 24: everything derived from one deleted document, outside
+    PostgreSQL. Idempotent; run by the worker after the rows are gone."""
+    await delete_document_points(
+        resources.qdrant,
+        resources.settings.qdrant_collection,
+        tenant_id=tenant_id,
+        document_id=document_id,
+    )
+    await resources.storage.delete_prefix(document_prefix(tenant_id, document_id))
+    removed = 0
+    for namespace in DOCUMENT_DERIVED_CACHES:
+        removed += await delete_redis_prefix(resources.redis, f"ciq:{tenant_id}:{namespace}:")
+    logger.info(
+        "document_data_erased",
+        extra={"tenant_id": tenant_id, "document_id": document_id, "cache_keys": removed},
+    )
     return {"cache_keys": removed}
 
 

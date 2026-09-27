@@ -125,6 +125,11 @@ DOCUMENTS_PROCESSED = Counter(
     "Document versions processed by the worker (completed, rejected, failed).",
     ["outcome"],
 )
+MALWARE_SCANS = Counter(
+    "contractiq_malware_scans_total",
+    "Uploads checked by the malware scanner (clean, infected, error).",
+    ["outcome"],
+)
 JOBS_RECOVERED = Counter(
     "contractiq_jobs_recovered_total",
     "Interrupted background jobs found by the recovery sweep (requeued or given up).",

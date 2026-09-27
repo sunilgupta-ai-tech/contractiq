@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
-import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ScanSearch, ShieldAlert, Upload, Download } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ScanSearch, ShieldAlert, Upload, Download, Fingerprint } from "lucide-react";
+import { personalDataText } from "@/utils/personal-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -168,6 +169,15 @@ export function ContractDetailView({ id }: { id: string }) {
           <span>
             <strong>{doc.injectionFlags} passage{doc.injectionFlags === 1 ? "" : "s"} in this document read like instructions to an AI.</strong>{" "}
             The Assistant always treats document text as data, never as instructions — but check where this file came from.
+          </span>
+        </div>
+      )}
+      {Object.keys(doc.personalData).length > 0 && (
+        <div role="note" className="mb-5 flex items-start gap-2.5 rounded-xl border border-brand/20 bg-brand-soft px-4 py-3 text-[13px] text-ink">
+          <Fingerprint className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" />
+          <span>
+            <strong>Contains personal data: {personalDataText(doc.personalData)}.</strong>{" "}
+            Share it only with people who need it; every download and question about it is recorded in the audit log.
           </span>
         </div>
       )}

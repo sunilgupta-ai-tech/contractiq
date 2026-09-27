@@ -6,6 +6,17 @@ on:
   pull_request:
 
 jobs:
+  # Phase 24: no key, password or token may ever enter the repository. The
+  # whole history is scanned, so a secret removed in a later commit is
+  # still caught (it must be rotated, not just deleted).
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Scan git history for secrets (gitleaks)
+        run: docker run --rm -v "$PWD":/repo zricethezav/gitleaks:v8.21.2 git /repo --redact --no-banner --exit-code 1
+
   backend:
     runs-on: ubuntu-latest
     services:
@@ -53,7 +64,7 @@ jobs:
       - run: npm run build
 
   docker:
-    needs: [backend, frontend]
+    needs: [secrets, backend, frontend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

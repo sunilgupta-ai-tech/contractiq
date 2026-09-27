@@ -36,6 +36,8 @@ class DocumentVersionOut(BaseModel):
     # treated as data regardless; the count is shown so people know.
     injection_flags: int = 0
     review_reasons: list[str] = []
+    # Phase 24: personal data found (distinct values per kind; never the values).
+    pii: dict[str, int] = {}
     created_at: datetime
 
 

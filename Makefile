@@ -74,8 +74,11 @@ restore-db: ## Restore a dump (stop backend/worker first): make restore-db file=
 qdrant-snapshot: ## Snapshot the vector collection into storage (backups/qdrant/)
 	docker compose exec backend python -m app.ops snapshot
 
+secret-scan: ## Scan the git history for committed secrets (gitleaks, as in CI)
+	docker run --rm -v "$$PWD":/repo zricethezav/gitleaks:v8.21.2 git /repo --redact --no-banner --exit-code 1
+
 lint: ## Lint backend and frontend
 	cd backend && ruff check app tests
 	cd frontend && npm run lint
 
-.PHONY: help env up down logs ps infra migrate migration backend-dev worker-dev frontend-dev test platform-admin eval eval-baseline ops-status recover-jobs reindex backup-db restore-db qdrant-snapshot lint
+.PHONY: help env up down logs ps infra migrate migration backend-dev worker-dev frontend-dev test platform-admin eval eval-baseline ops-status recover-jobs reindex backup-db restore-db qdrant-snapshot secret-scan lint

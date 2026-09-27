@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import TYPE_CHECKING
 
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
@@ -57,6 +57,7 @@ from app.schemas.query import (
     UnsupportedClaimOut,
     UsageOut,
 )
+from app.security.pii import mask_pii
 from app.services import answer_cache, usage
 from app.services.audit_service import RequestMeta, record_audit
 from app.services.reranking_service import reranker_for
@@ -136,6 +137,7 @@ class QueryService:
         try:
             with usage.start_tally() as tally:
                 result = self._apply_grounding_policy(await self._run_pipeline(request, history))
+            result = self._mask_personal_data(result)
         except Exception:
             trace.metadata["outcome"] = "error"
             self._finish_trace()
@@ -244,6 +246,15 @@ class QueryService:
             result.answer = UNVERIFIED_MESSAGE
             result.insufficient_evidence = True
             result.cited_fraction = 0.0
+        return result
+
+    def _mask_personal_data(self, result: RagAnswer) -> RagAnswer:
+        """Phase 24, PII_MASK_ANSWERS: Aadhaar and card numbers are masked in
+        the answer and its quotes, as shown and as kept in the conversation."""
+        if not self.resources.settings.pii_mask_answers:
+            return result
+        result.answer = mask_pii(result.answer)
+        result.citations = [replace(c, quote=mask_pii(c.quote)) for c in result.citations]
         return result
 
     def _mode(self, request: QueryRequest) -> str:

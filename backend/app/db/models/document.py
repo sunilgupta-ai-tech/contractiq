@@ -183,6 +183,14 @@ class DocumentVersion(UUIDPrimaryKeyMixin, TimestampMixin, TenantMixin, Base):
         found = (self.extraction_metadata or {}).get("injection") or {}
         return int(found.get("chunks", 0))
 
+    @property
+    def pii(self) -> dict[str, int]:
+        """Distinct personal-data values found, per kind (Phase 24), e.g.
+        {"aadhaar": 2, "email": 5}. Empty when none were found or the
+        version was processed before detection existed."""
+        found = (self.extraction_metadata or {}).get("pii") or {}
+        return {str(k): int(v) for k, v in (found.get("types") or {}).items()}
+
     jobs: Mapped[list[ProcessingJob]] = relationship(back_populates="document_version")
 
 

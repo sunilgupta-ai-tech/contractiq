@@ -17,6 +17,7 @@ from app.core.config import Settings
 QUEUE_NAME = "contractiq:documents"
 PROCESS_DOCUMENT = "process_document"
 DELETE_ORGANIZATION = "delete_organization"
+PURGE_DOCUMENT = "purge_document"
 
 
 def create_queue(settings: Settings) -> ArqRedis:
@@ -48,4 +49,20 @@ async def enqueue_organization_deletion(
         DELETE_ORGANIZATION,
         organization_id,
         _job_id=arq_job_id or organization_deletion_job_id(organization_id),
+    )
+
+
+async def enqueue_document_purge(
+    queue: ArqRedis, tenant_id: str, document_id: str, *, defer_s: int | None = None
+) -> None:
+    """Phase 24: erase what a deleted document left outside PostgreSQL
+    (files, vectors, caches). `defer_s` schedules a second pass after work
+    that was in flight when the document was deleted."""
+    suffix = f":deferred-{defer_s}" if defer_s else ""
+    await queue.enqueue_job(
+        PURGE_DOCUMENT,
+        tenant_id,
+        document_id,
+        _job_id=f"purge-doc:{document_id}{suffix}",
+        _defer_by=defer_s,
     )

@@ -45,6 +45,7 @@ from app.document_processing.parser import (
 from app.document_processing.pymupdf_parser import open_pdf, to_page_image
 from app.document_processing.xlsx_parser import parse_xlsx
 from app.guardrails.prompt_injection import scan_for_injection
+from app.security.pii import pii_report
 from app.llm.base import embedding_model_label
 from app.multimodal.transcriber import PageToTranscribe, is_weak_ocr
 from app.services.chunking_service import (
@@ -373,6 +374,9 @@ async def _chunk(ctx: StageContext) -> None:
             parent_chunks=len(result.parents),
             injection=injection_report(c.text for c in result.children),
         )
+        if ctx.resources.settings.pii_detection_enabled:
+            # Phase 24: counts of personal data per kind (never the values).
+            metadata["pii"] = pii_report(c.text for c in result.children)
 
 
 def review_needed(

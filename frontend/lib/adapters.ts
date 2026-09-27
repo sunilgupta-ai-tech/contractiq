@@ -35,6 +35,7 @@ export interface ApiVersion {
   status: DocumentStatus;
   error_message: string | null;
   injection_flags?: number;
+  pii?: Record<string, number>;
   review_reasons?: string[];
   created_at: string;
 }
@@ -169,6 +170,7 @@ export function toDocument(d: ApiDocument): ContractDocument {
     fileName: latest?.original_filename ?? d.title,
     visibility: d.visibility ?? "ORGANIZATION",
     injectionFlags: latest?.injection_flags ?? 0,
+    personalData: latest?.pii ?? {},
     needsReview: d.needs_review ?? false,
     reviewReasons: latest?.review_reasons ?? [],
     status: d.status,

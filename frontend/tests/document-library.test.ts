@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toDocument, type ApiDocument } from "@/lib/adapters";
+import { personalDataText } from "@/utils/personal-data";
 
 const base: ApiDocument = {
   id: "d1",
@@ -38,6 +39,13 @@ describe("library adapters", () => {
     });
     expect([doc.visibility, doc.injectionFlags]).toEqual(["RESTRICTED", 2]);
     expect(toDocument(base).visibility).toBe("ORGANIZATION");
+  });
+
+  it("maps personal-data counts (Phase 24)", () => {
+    const doc = toDocument({ ...base, latest_version: { ...base.latest_version!, pii: { aadhaar: 2, email: 1 } } });
+    expect(doc.personalData).toEqual({ aadhaar: 2, email: 1 });
+    expect(personalDataText(doc.personalData)).toBe("2 Aadhaar numbers, 1 email address");
+    expect(toDocument(base).personalData).toEqual({});
   });
 
   it("treats documents from before file types as PDFs named by title", () => {

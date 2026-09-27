@@ -155,6 +155,23 @@ class Settings(BaseSettings):
     # Starts of one job (arq retries included) before it is given up as FAILED.
     job_recovery_max_attempts: int = 5
 
+    # --- Enterprise security (Phase 24) ---
+    # Malware scanning of every upload with ClamAV (clamd over TCP) before
+    # anything is stored. "off" by default so local setups need no scanner;
+    # turn it on in production. MALWARE_SCAN_ON_ERROR decides what happens
+    # when the scanner can't give an answer (down, timeout, file above its
+    # StreamMaxLength): "reject" (fail closed, the default) or "allow".
+    malware_scan: Literal["off", "clamav"] = "off"
+    clamav_host: str = "clamav"
+    clamav_port: int = 3310
+    clamav_timeout_s: float = 120.0
+    malware_scan_on_error: Literal["reject", "allow"] = "reject"
+    # Personal data found in documents (Aadhaar, PAN, payment cards, email,
+    # phone) is counted per version and shown; the values are never stored.
+    pii_detection_enabled: bool = True
+    # Mask Aadhaar and card numbers in AI answers (last 4 digits kept).
+    pii_mask_answers: bool = False
+
     # --- Chunking (worker, Phase 5) ---
     # Sizes are *estimated* tokens (~4 chars each; see app/chunking/tokens.py).
     chunk_max_tokens: int = 400  # child chunk: about one clause

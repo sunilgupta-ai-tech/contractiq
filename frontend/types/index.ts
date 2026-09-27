@@ -82,6 +82,9 @@ export interface ContractDocument {
   visibility: "ORGANIZATION" | "RESTRICTED";
   /** Phase 20: passages in the latest version that read like instructions to an AI. */
   injectionFlags: number;
+  /** Phase 24: personal data found in the latest version — distinct values per kind
+   *  (aadhaar, pan, card, email, phone). Counts only; never the values. */
+  personalData: Record<string, number>;
   /** Phase 21: the recovered text may be unreliable; a person should check it. */
   needsReview: boolean;
   reviewReasons: string[];

@@ -32,7 +32,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from fastapi import UploadFile
-from sqlalchemy import delete, func, select
+from sqlalchemy import Text, cast, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,7 @@ from app.core.exceptions import (
     FileTooLargeError,
     ForbiddenError,
     InvalidFileError,
+    MalwareDetectedError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -49,6 +50,7 @@ from app.core.logging import get_logger
 from app.core.security import Permission
 from app.db.models import (
     ContractType,
+    Conversation,
     Document,
     DocumentGrant,
     DocumentStatus,
@@ -57,6 +59,7 @@ from app.db.models import (
     FileType,
     JobStatus,
     JobType,
+    Message,
     ProcessingJob,
     Role,
     User,
@@ -76,7 +79,8 @@ from app.document_processing.formats import (
     detect_format,
     format_for_storage_key,
 )
-from app.queue import enqueue_document_processing
+from app.observability import metrics
+from app.queue import enqueue_document_processing, enqueue_document_purge
 from app.schemas.common import Page
 from app.schemas.document import (
     AccessGrantOut,
@@ -93,6 +97,7 @@ from app.schemas.document import (
     UpdateDocumentAccessRequest,
     UploadResult,
 )
+from app.security.malware import ScannerUnavailableError, create_scanner
 from app.services.audit_service import RequestMeta, record_audit
 from app.services.plans import ensure_can_upload
 from app.storage import build_object_key, document_prefix
@@ -102,6 +107,8 @@ if TYPE_CHECKING:
     from app.core.resources import Resources
 
 logger = get_logger(__name__)
+
+REMOVED_ANSWER = "This answer was removed because a document it cited has been deleted."  # Phase 24
 
 PDF_MIME = "application/pdf"
 # Browsers and HTTP clients label PDFs inconsistently, so the declared type
@@ -305,6 +312,9 @@ class DocumentService:
             new_document=metadata.document_id is None,
             size_bytes=size,
         )
+        # Phase 24: nothing is stored, processed or embedded before the
+        # malware scanner has seen the file.
+        await self._scan_for_malware(data, filename, sha256, actor_id=actor_id, meta=meta)
 
         if metadata.document_id is not None:
             document = await self.documents.get_with_versions(metadata.document_id)
@@ -683,7 +693,14 @@ class DocumentService:
                 internal_detail=repr(exc),
             ) from exc
 
+        # Phase 24: was a version still being processed? Its job may write
+        # files or vectors after this point, so a second purge runs later.
+        in_flight = any(
+            v.status not in (DocumentStatus.COMPLETED, DocumentStatus.FAILED)
+            for v in document.versions
+        )
         await self.documents.delete_by_id(document.id)
+        redacted = await self._redact_conversations(document.id)
         record_audit(
             self.session,
             tenant_id=self.tenant_id,
@@ -692,7 +709,7 @@ class DocumentService:
             resource_type="document",
             resource_id=document.id,
             meta=meta,
-            metadata={"versions": version_count},
+            metadata={"versions": version_count, "answers_removed": redacted},
         )
         await self.session.commit()
 
@@ -704,6 +721,85 @@ class DocumentService:
             await self.resources.storage.delete_prefix(prefix)
         except Exception as exc:  # noqa: BLE001
             logger.warning("storage_delete_failed", extra={"prefix": prefix, "error": repr(exc)})
+
+        # Phase 24: caches, plus a retry of files and vectors, in the worker.
+        try:
+            await enqueue_document_purge(
+                self.resources.queue, str(self.tenant_id), str(document.id)
+            )
+            if in_flight:
+                await enqueue_document_purge(
+                    self.resources.queue,
+                    str(self.tenant_id),
+                    str(document.id),
+                    defer_s=self.resources.settings.job_stale_running_s,
+                )
+        except Exception as exc:  # noqa: BLE001 — the rows are gone; caches expire anyway
+            logger.warning("purge_enqueue_failed", extra={"error": repr(exc)})
+
+    async def _redact_conversations(self, document_id: uuid.UUID) -> int:
+        """Phase 24: answers that cited the deleted document quote its text.
+        They are replaced by a notice (the questions stay), and the document
+        leaves every conversation's scope."""
+        doc = str(document_id)
+        result = await self.session.execute(
+            update(Message)
+            .where(
+                Message.organization_id == self.tenant_id,
+                Message.citations.contains([{"document_id": doc}]),
+            )
+            .values(content=REMOVED_ANSWER, citations=[])
+        )
+        await self.session.execute(
+            update(Conversation)
+            .where(
+                Conversation.organization_id == self.tenant_id,
+                Conversation.document_ids.contains([doc]),
+            )
+            .values(document_ids=Conversation.document_ids.op("-")(cast(doc, Text)))
+        )
+        return int(result.rowcount or 0)
+
+    async def _scan_for_malware(
+        self,
+        data: bytes | SpooledUpload,
+        filename: str,
+        sha256: str,
+        *,
+        actor_id: uuid.UUID,
+        meta: RequestMeta,
+    ) -> None:
+        settings = self.resources.settings
+        scanner = create_scanner(settings)
+        if scanner is None:
+            return
+        try:
+            result = await scanner.scan(data.path if isinstance(data, SpooledUpload) else data)
+        except ScannerUnavailableError as exc:
+            metrics.MALWARE_SCANS.labels(outcome="error").inc()
+            if settings.malware_scan_on_error == "allow":
+                logger.warning("malware_scan_skipped", extra={"reason": str(exc)})
+                return
+            raise ServiceUnavailableError(
+                "The file could not be checked for malware right now. Please try again shortly.",
+                internal_detail=f"scanner: {exc}",
+            ) from exc
+        if result.clean:
+            metrics.MALWARE_SCANS.labels(outcome="clean").inc()
+            return
+        metrics.MALWARE_SCANS.labels(outcome="infected").inc()
+        logger.warning("malware_detected", extra={"signature": result.signature, "sha256": sha256})
+        record_audit(
+            self.session,
+            tenant_id=self.tenant_id,
+            actor_user_id=actor_id,
+            action="document.upload_blocked",
+            resource_type="document",
+            meta=meta,
+            metadata={"filename": filename, "sha256": sha256, "signature": result.signature},
+        )
+        await self.session.commit()
+        raise MalwareDetectedError()
 
     async def _delete_object_quietly(self, key: str) -> None:
         try:

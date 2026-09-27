@@ -27,6 +27,7 @@ from .tasks.document_processing import process_document
 from .tasks.embedding import reembed_tenant
 from .tasks.indexing import delete_document_vectors
 from .tasks.organization import delete_organization
+from .tasks.purge import purge_document
 from .tasks.recovery import recover_jobs
 
 settings = get_settings()
@@ -56,6 +57,7 @@ class WorkerSettings:
         delete_document_vectors,
         analyze_version,
         delete_organization,
+        purge_document,
     ]
     on_startup = startup
     on_shutdown = shutdown

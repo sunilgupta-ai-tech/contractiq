@@ -61,6 +61,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # Phase 24: malware scanning of uploads (MALWARE_SCAN=clamav). Opt-in:
+  #   docker compose --profile security up -d clamav
+  # First start downloads the virus signatures (a few minutes, ~1 GB RAM).
+  clamav:
+    image: clamav/clamav-debian:1.4
+    profiles: ["security"]
+    restart: unless-stopped
+    environment:
+      # Must be >= MAX_UPLOAD_SIZE_MB, or large uploads get a scanner error.
+      CLAMD_CONF_StreamMaxLength: 1100M
+      CLAMD_CONF_MaxFileSize: 1100M
+      CLAMD_CONF_MaxScanSize: 1100M
+    volumes:
+      - clamav_data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+
   migrate:
     build:
       context: ./backend
@@ -114,6 +135,7 @@ services:
       backend: { condition: service_healthy }
 
 volumes:
+  clamav_data:
   postgres_data:
   redis_data:
   qdrant_data:

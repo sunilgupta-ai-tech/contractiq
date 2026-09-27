@@ -41,6 +41,7 @@ class ErrorCode(StrEnum):
     PLAN_LIMIT_REACHED = "PLAN_LIMIT_REACHED"
     ORGANIZATION_SUSPENDED = "ORGANIZATION_SUSPENDED"
     DUPLICATE_DOCUMENT = "DUPLICATE_DOCUMENT"
+    MALWARE_DETECTED = "MALWARE_DETECTED"
 
 
 class AppError(Exception):
@@ -115,6 +116,14 @@ class DuplicateDocumentError(AppError):
     status_code = status.HTTP_409_CONFLICT
     code = ErrorCode.DUPLICATE_DOCUMENT
     message = "This document already exists in your organization."
+
+
+class MalwareDetectedError(AppError):
+    """The malware scanner flagged the upload (Phase 24). Nothing was stored."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    code = ErrorCode.MALWARE_DETECTED
+    message = "This file was flagged by the malware scanner and was not uploaded."
 
 
 class InvalidFileError(AppError):
