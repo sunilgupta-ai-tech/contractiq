@@ -88,7 +88,7 @@ One model call over the found clauses (numbered evidence blocks). It returns an 
 
 ## Access and errors
 
-`analysis:run` permission (ADMIN, LEGAL_MANAGER, ANALYST; not VIEWER). Every id is resolved inside the caller's tenant: another organisation's id gives 404, a version still processing gives 409, and comparing a version with itself gives 422. Model or search misconfiguration gives 503 "not configured"; temporary failures give 503 "temporarily unavailable".
+`analysis:run` permission (Admin, Manager, Employee and any custom role that has it; not Viewer). Every id is resolved inside the caller's tenant: another organisation's id gives 404, a version still processing gives 409, and comparing a version with itself gives 422. Model or search misconfiguration gives 503 "not configured"; temporary failures give 503 "temporarily unavailable".
 
 ## Cost
 

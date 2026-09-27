@@ -21,7 +21,45 @@ export const FILE_TYPES = ["PDF", "IMAGE", "WORD", "EXCEL"] as const;
 export type FileType = (typeof FILE_TYPES)[number];
 
 export type RiskLevel = "high" | "medium" | "low";
-export type Role = "ADMIN" | "LEGAL_MANAGER" | "ANALYST" | "VIEWER";
+/** Phase 17: what a role may do (mirrors backend `Permission`). */
+export const PERMISSIONS = [
+  "document:read",
+  "document:upload",
+  "document:delete",
+  "query:run",
+  "analysis:run",
+  "evaluation:run",
+  "user:manage",
+  "role:manage",
+] as const;
+export type Permission = (typeof PERMISSIONS)[number];
+
+export interface PermissionInfo {
+  key: Permission;
+  group: string;
+  label: string;
+  description: string;
+}
+
+export interface RoleDef {
+  id: string;
+  name: string;
+  description: string;
+  permissions: Permission[];
+  isSystem: boolean;
+  memberCount: number;
+}
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  name: string;
+  roleId: string;
+  roleName: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
 
 export interface DocumentVersionSummary {
   id: string;

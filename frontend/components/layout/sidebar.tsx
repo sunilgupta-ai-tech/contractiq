@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { ChevronsUpDown } from "lucide-react";
 import { Logo } from "@/components/ui/logo";
 import { config } from "@/lib/config";
-import { initials, useMe } from "@/lib/session";
+import { can, initials, useMe } from "@/lib/session";
 import { cn } from "@/utils/cn";
 import { primaryNav, secondaryNav, type NavItem } from "./nav";
 
@@ -57,16 +57,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <p className="mb-2 px-3 text-2xs font-semibold uppercase tracking-[0.12em] text-rail-mute/70">Workspace</p>
       <nav className="flex flex-col gap-0.5">
-        {primaryNav.map((item) => (
-          <NavLink key={item.href} item={item} onNavigate={onNavigate} />
-        ))}
+        {primaryNav
+          .filter((item) => !item.requires || can(me, item.requires))
+          .map((item) => (
+            <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+          ))}
       </nav>
 
-      <p className="mb-2 mt-7 px-3 text-2xs font-semibold uppercase tracking-[0.12em] text-rail-mute/70">Platform</p>
+      <p className="mb-2 mt-7 px-3 text-2xs font-semibold uppercase tracking-[0.12em] text-rail-mute/70">Organization</p>
       <nav className="flex flex-col gap-0.5">
-        {secondaryNav.map((item) => (
-          <NavLink key={item.href} item={item} onNavigate={onNavigate} />
-        ))}
+        {secondaryNav
+          .filter((item) => !item.requires || can(me, item.requires))
+          .map((item) => (
+            <NavLink key={item.href} item={item} onNavigate={onNavigate} />
+          ))}
       </nav>
 
       <div className="mt-auto rounded-xl border border-white/10 bg-gradient-to-b from-white/[0.05] to-transparent p-4">

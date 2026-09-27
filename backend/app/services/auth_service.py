@@ -10,8 +10,9 @@ Security properties this service is responsible for:
 * Refresh tokens are single-use. Each token's `jti` is claimed in Redis on
   first use; replaying it is rejected. A stolen refresh token therefore
   stops working as soon as either party refreshes.
-* Refresh re-reads the user. Role changes and deactivation take effect at
-  the next refresh (at most one access-token lifetime), not at token expiry.
+* Refresh re-reads the user, their role and organization, so a token always
+  carries the role's current permissions. Changes also revoke existing
+  access tokens at once (app/core/sessions.py), forcing that refresh.
 """
 
 from __future__ import annotations
@@ -30,8 +31,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.exceptions import ConflictError, ServiceUnavailableError, UnauthorizedError
 from app.core.logging import get_logger
-from app.core.security import Role, create_token, decode_token, hash_password, verify_password
-from app.db.models import Organization, User
+from app.core.security import (
+    SystemRole,
+    create_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
+from app.db.models import SYSTEM_ROLE_IDS, Organization, User
 from app.db.repositories.user_repository import (
     find_user_by_email,
     find_user_in_tenant,
@@ -81,7 +88,7 @@ class AuthService:
         self.settings = settings
 
     async def register(self, data: RegisterRequest, meta: RequestMeta) -> TokenPair:
-        """Create an organization and its first user, who becomes its ADMIN."""
+        """Create an organization and its first user, who becomes its Admin."""
         if await find_user_by_email(self.session, data.email):
             raise ConflictError(EMAIL_TAKEN)
 
@@ -93,7 +100,7 @@ class AuthService:
             email=data.email,
             full_name=data.full_name,
             password_hash=hash_password(data.password),
-            role=Role.ADMIN,
+            role_id=SYSTEM_ROLE_IDS[SystemRole.ADMIN],
             last_login_at=datetime.now(UTC),
         )
         self.session.add(user)
@@ -102,6 +109,7 @@ class AuthService:
         except IntegrityError as exc:  # concurrent sign-up with the same email
             await self.session.rollback()
             raise ConflictError(EMAIL_TAKEN) from exc
+        await self.session.refresh(user, ["role"])
 
         record_audit(
             self.session,
@@ -195,15 +203,23 @@ class AuthService:
 
     def _issue_tokens(self, user: User) -> TokenPair:
         subject, tenant_id = str(user.id), str(user.organization_id)
+        role, role_id, permissions = user.role.name, str(user.role_id), user.role.permissions
         return TokenPair(
             access_token=create_token(
-                self.settings, subject=subject, tenant_id=tenant_id, role=user.role
+                self.settings,
+                subject=subject,
+                tenant_id=tenant_id,
+                role=role,
+                role_id=role_id,
+                permissions=permissions,
             ),
             refresh_token=create_token(
                 self.settings,
                 subject=subject,
                 tenant_id=tenant_id,
-                role=user.role,
+                role=role,
+                role_id=role_id,
+                permissions=permissions,
                 token_type="refresh",  # noqa: S106
             ),
             expires_in=self.settings.access_token_expire_minutes * 60,

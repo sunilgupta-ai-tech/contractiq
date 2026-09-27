@@ -9,10 +9,23 @@ from app.api.v1 import (
     jobs,
     query,
     risk,
+    roles,
     summaries,
     users,
 )
 
 api_router = APIRouter()
-for module in (health, auth, users, documents, jobs, query, contracts, comparison, risk, summaries):
+for module in (
+    health,
+    auth,
+    users,
+    roles,
+    documents,
+    jobs,
+    query,
+    contracts,
+    comparison,
+    risk,
+    summaries,
+):
     api_router.include_router(module.router)

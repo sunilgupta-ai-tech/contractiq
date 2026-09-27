@@ -16,7 +16,7 @@ from app.agents.tools.registry import Tool, ToolError, ToolRegistry
 from app.core.config import Settings
 from app.core.dependencies import AnalysisRateLimitDep, get_auth_service
 from app.core.exceptions import RateLimitedError
-from app.core.security import Permission, Role, create_token
+from app.core.security import Permission, SystemRole
 from app.guardrails.evidence_validator import (
     UNVERIFIED_MESSAGE,
     check_grounding,
@@ -30,6 +30,7 @@ from app.rag.types import EvidenceBlock
 from app.schemas.query import QueryRequest
 from app.services.citation_service import resolve_citations
 from app.services.query_service import QueryService
+from tests.tokens import perms, token_for
 from tests.unit.test_auth import FakeAuthService
 from tests.unit.test_rag import FakeLLM, FakeRetriever, chunk
 
@@ -61,7 +62,8 @@ def test_questions_are_cleaned_before_length_checks():
 
 
 class MemoryRedis:
-    """Enough of redis.asyncio for the limiter: get/delete and a pipeline of incr+expire."""
+    """Enough of redis.asyncio for the limiter and session check: get/mget/delete and a
+    pipeline of incr+expire."""
 
     def __init__(self, fail=False):
         self.data: dict[str, int] = {}
@@ -74,6 +76,10 @@ class MemoryRedis:
     async def get(self, key):
         self._guard()
         return self.data.get(key)
+
+    async def mget(self, *keys):  # the per-request session check (Phase 17)
+        self._guard()
+        return [self.data.get(k) for k in keys]
 
     async def delete(self, key):
         self._guard()
@@ -136,10 +142,8 @@ def _with_limits(app, **settings):
     return redis
 
 
-def _bearer(settings, *, user=None, role=Role.ANALYST):
-    token = create_token(
-        settings, subject=str(user or uuid.uuid4()), tenant_id=str(uuid.uuid4()), role=role
-    )
+def _bearer(settings, *, user=None, role=SystemRole.EMPLOYEE):
+    token = token_for(settings, role, subject=str(user or uuid.uuid4()))
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -163,7 +167,7 @@ async def test_costly_endpoints_are_limited_per_user(app, client, settings):
 
 async def test_forbidden_requests_do_not_use_up_the_allowance(app, client, settings):
     redis = _with_limits(app, rate_limit_analysis_per_minute=1)
-    viewer = _bearer(settings, role=Role.VIEWER)
+    viewer = _bearer(settings, role=SystemRole.VIEWER)
     for _ in range(3):
         response = await client.post("/api/v1/contracts/risk-analysis", json={}, headers=viewer)
         assert response.status_code == 403
@@ -251,7 +255,7 @@ def _query_service(**settings):
         None,
         tenant_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
-        role=Role.ANALYST,
+        permissions=perms(SystemRole.EMPLOYEE),
         resources=resources,  # type: ignore[arg-type]
     )
 
@@ -388,14 +392,14 @@ async def test_registry_refuses_bad_arguments_before_running_the_tool():
         await registry.call(
             "get_sections",
             tenant_id="t",
-            role=Role.ANALYST,
+            permissions=perms(SystemRole.EMPLOYEE),
             calls_so_far=0,
             arguments={"parent_ids": [str(i) for i in range(60)]},
         )
     await registry.call(
         "get_sections",
         tenant_id="t",
-        role=Role.ANALYST,
+        permissions=perms(SystemRole.EMPLOYEE),
         calls_so_far=0,
         arguments={"parent_ids": ["p1"]},
     )

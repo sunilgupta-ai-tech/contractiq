@@ -23,6 +23,10 @@ describe("parseEnvelope", () => {
     expect(parseEnvelope(503, { success: false, data: report }, true)).toEqual(report);
   });
 
+  it("treats 204 No Content as success", () => {
+    expect(parseEnvelope(204, null)).toBeUndefined();
+  });
+
   it("rejects non-envelope payloads", () => {
     expect(() => parseEnvelope(502, "<html>Bad gateway</html>")).toThrow(ApiError);
   });

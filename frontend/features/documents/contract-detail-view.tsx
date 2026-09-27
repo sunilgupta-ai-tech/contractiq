@@ -12,6 +12,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { useAsync } from "@/hooks/use-async";
 import { ApiError } from "@/lib/api-client";
 import { config } from "@/lib/config";
+import { can, useMe } from "@/lib/session";
 import { documentService } from "@/services/document-service";
 import type { Clause } from "@/types";
 import { cn } from "@/utils/cn";
@@ -50,6 +51,7 @@ function groupBySection(clauses: Clause[]) {
 const riskDot = { high: "bg-danger", medium: "bg-warn", low: "bg-ok" } as const;
 
 export function ContractDetailView({ id }: { id: string }) {
+  const me = useMe();
   const { data: doc, error, loading, reload } = useAsync(() => documentService.get(id), [id]);
   const [selected, setSelected] = useState<string>("c-8-3");
   const sections = useMemo(() => groupBySection(doc?.clauses ?? []), [doc]);
@@ -94,7 +96,7 @@ export function ContractDetailView({ id }: { id: string }) {
             </p>
           </div>
           <div className="flex gap-2">
-            {!config.useDemoData && (
+            {!config.useDemoData && can(me, "document:upload") && (
               <>
                 <input
                   ref={fileInput}
@@ -112,12 +114,16 @@ export function ContractDetailView({ id }: { id: string }) {
                 </Button>
               </>
             )}
-            <Link href="/compare">
-              <Button variant="secondary"><GitCompareArrows className="h-4 w-4" /> Compare versions</Button>
-            </Link>
-            <Link href={`/assistant?doc=${doc.id}`}>
-              <Button><MessageSquareText className="h-4 w-4" /> Ask this document</Button>
-            </Link>
+            {can(me, "analysis:run") && (
+              <Link href="/compare">
+                <Button variant="secondary"><GitCompareArrows className="h-4 w-4" /> Compare versions</Button>
+              </Link>
+            )}
+            {can(me, "query:run") && (
+              <Link href={`/assistant?doc=${doc.id}`}>
+                <Button><MessageSquareText className="h-4 w-4" /> Ask this document</Button>
+              </Link>
+            )}
           </div>
         </div>
       </div>

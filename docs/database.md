@@ -5,7 +5,8 @@ PostgreSQL 16, async SQLAlchemy 2, Alembic migrations (`backend/migrations`).
 | Table | Purpose | Tenant-owned |
 |---|---|---|
 | `organizations` | Tenants | — |
-| `users` | Accounts, bcrypt hash, role (`ADMIN`, `LEGAL_MANAGER`, `ANALYST`, `VIEWER`) | ✓ |
+| `users` | Accounts, bcrypt hash, `role_id` → `roles` | ✓ |
+| `roles` | Phase 17: system roles (Admin, Manager, Employee, Viewer; `organization_id` NULL, fixed IDs) and each organization's custom roles; `permissions` is a JSON list from the code's catalog | ✓ (own + system) |
 | `documents` | Logical contract, current status, current version | ✓ |
 | `document_versions` | Each upload/amendment: storage key, sha256, pages, status, extraction metadata | ✓ |
 | `processing_jobs` | Durable job state: stage, progress, attempts, timings, error | ✓ |

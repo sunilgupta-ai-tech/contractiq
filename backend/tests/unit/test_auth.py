@@ -7,12 +7,13 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core.dependencies import get_auth_service
 from app.core.exceptions import ForbiddenError, ServiceUnavailableError, UnauthorizedError
-from app.core.security import Role, create_token
+from app.core.security import SystemRole
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenPair
 from app.schemas.user import UpdateUserRequest
 from app.services.audit_service import RequestMeta
 from app.services.auth_service import claim_refresh_token, slugify
 from app.services.user_service import UserService
+from tests.tokens import perms, token_for
 
 
 def _register(**overrides):
@@ -106,22 +107,22 @@ async def test_refresh_fails_closed_when_redis_is_down():
 async def test_admin_cannot_change_own_role_or_status():
     me = uuid.uuid4()
     service = UserService(MagicMock(), uuid.uuid4())
-    for change in ({"role": Role.VIEWER}, {"is_active": False}):
+    for change in ({"role_id": uuid.uuid4()}, {"is_active": False}):
         with pytest.raises(ForbiddenError):
-            await service.update(me, UpdateUserRequest(**change), actor_id=me, meta=RequestMeta())
+            await service.update(
+                me,
+                UpdateUserRequest(**change),
+                actor_id=me,
+                actor_permissions=perms(SystemRole.ADMIN),
+                meta=RequestMeta(),
+            )
 
 
 # --- Routes ----------------------------------------------------------------------
 
 
-def _token(settings, role=Role.VIEWER, token_type="access"):  # noqa: S107
-    return create_token(
-        settings,
-        subject=str(uuid.uuid4()),
-        tenant_id=str(uuid.uuid4()),
-        role=role,
-        token_type=token_type,
-    )
+def _token(settings, role=SystemRole.VIEWER, token_type="access"):  # noqa: S107
+    return token_for(settings, role, token_type=token_type)
 
 
 @pytest.mark.parametrize(
@@ -135,12 +136,12 @@ async def test_user_routes_require_a_token(client, method, path):
 
 
 async def test_refresh_token_is_not_accepted_as_bearer(client, settings):
-    token = _token(settings, role=Role.ADMIN, token_type="refresh")
+    token = _token(settings, role=SystemRole.ADMIN, token_type="refresh")
     response = await client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
 
 
-@pytest.mark.parametrize("role", [Role.VIEWER, Role.ANALYST, Role.LEGAL_MANAGER])
+@pytest.mark.parametrize("role", [SystemRole.VIEWER, SystemRole.EMPLOYEE, SystemRole.MANAGER])
 @pytest.mark.parametrize(
     ("method", "path"),
     [

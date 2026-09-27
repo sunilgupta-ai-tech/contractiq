@@ -30,7 +30,7 @@ from app.agents.errors import AgentTimeoutError
 from app.agents.results import AgentAnswer
 from app.core.exceptions import NotFoundError, ServiceUnavailableError
 from app.core.logging import get_logger, request_id_ctx
-from app.core.security import Role
+from app.core.security import Permission
 from app.db.models import Conversation, Message, MessageRole
 from app.db.repositories.conversation_repository import (
     ConversationRepository,
@@ -91,13 +91,13 @@ class QueryService:
         *,
         tenant_id: uuid.UUID,
         user_id: uuid.UUID,
-        role: Role,
+        permissions: frozenset[Permission],
         resources: Resources,
     ) -> None:
         self.session = session
         self.tenant_id = tenant_id
         self.user_id = user_id
-        self.role = role  # the agent's tool registry checks permissions with it
+        self.permissions = permissions  # the agent's tool registry checks them
         self.resources = resources
         self.conversations = ConversationRepository(session, tenant_id)
         self.messages = MessageRepository(session, tenant_id)
@@ -242,7 +242,7 @@ class QueryService:
                 return await agent.answer(
                     request.question,
                     tenant_id=tenant_id,
-                    role=self.role,
+                    permissions=self.permissions,
                     document_ids=document_ids,
                     version_ids=version_ids,
                     history=history,

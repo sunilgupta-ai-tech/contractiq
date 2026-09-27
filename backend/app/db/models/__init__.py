@@ -12,6 +12,7 @@ from app.db.models.document import (
 from app.db.models.evaluation import EvaluationRun
 from app.db.models.job import JobStatus, JobType, ProcessingJob
 from app.db.models.organization import Organization
+from app.db.models.role import SYSTEM_ROLE_IDS, Role
 from app.db.models.user import User
 
 __all__ = [
@@ -29,5 +30,7 @@ __all__ = [
     "MessageRole",
     "Organization",
     "ProcessingJob",
+    "Role",
+    "SYSTEM_ROLE_IDS",
     "User",
 ]

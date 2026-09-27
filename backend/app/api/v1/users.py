@@ -49,7 +49,11 @@ async def list_users(
 async def create_user(
     admin: UserManagerDep, body: CreateUserRequest, service: UserServiceDep, meta: RequestMetaDep
 ) -> ApiResponse[UserOut]:
-    return ApiResponse(data=await service.create(body, actor_id=admin.user_id, meta=meta))
+    return ApiResponse(
+        data=await service.create(
+            body, actor_id=admin.user_id, actor_permissions=admin.permissions, meta=meta
+        )
+    )
 
 
 @router.patch(
@@ -64,4 +68,12 @@ async def update_user(
     service: UserServiceDep,
     meta: RequestMetaDep,
 ) -> ApiResponse[UserOut]:
-    return ApiResponse(data=await service.update(user_id, body, actor_id=admin.user_id, meta=meta))
+    return ApiResponse(
+        data=await service.update(
+            user_id,
+            body,
+            actor_id=admin.user_id,
+            actor_permissions=admin.permissions,
+            meta=meta,
+        )
+    )

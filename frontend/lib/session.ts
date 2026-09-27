@@ -3,30 +3,42 @@
 import { useEffect, useState } from "react";
 import { apiRequest, getAccessToken } from "@/lib/api-client";
 import { config } from "@/lib/config";
+import { PERMISSIONS, type Permission } from "@/types";
 
 /** The signed-in user and their organization, for the app shell. */
 export interface Me {
+  id: string;
   name: string;
   role: string;
   organization: string;
   members: number;
+  /** What the UI offers. The API enforces the same permissions regardless. */
+  permissions: Permission[];
 }
 
 interface ApiMe {
+  id: string;
   full_name: string;
-  role: string;
+  role_name: string;
   organization_name: string;
   member_count: number;
+  permissions: Permission[];
 }
 
-const DEMO_ME: Me = { name: "Sunil Gupta", role: "Admin", organization: "Acme Legal", members: 12 };
-
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: "Admin",
-  LEGAL_MANAGER: "Legal manager",
-  ANALYST: "Analyst",
-  VIEWER: "Viewer",
+const DEMO_ME: Me = {
+  id: "demo-user",
+  name: "Sunil Gupta",
+  role: "Admin",
+  organization: "Acme Legal",
+  members: 12,
+  permissions: [...PERMISSIONS],
 };
+
+/** Whether the signed-in user may do something. While /users/me is still
+ *  loading (`me` null) nothing permission-gated is shown. */
+export function can(me: Me | null, permission: Permission): boolean {
+  return Boolean(me?.permissions.includes(permission));
+}
 
 // One /users/me request per signed-in token, shared by every component.
 let cache: { token: string; promise: Promise<Me> } | null = null;
@@ -36,10 +48,12 @@ export function loadMe(): Promise<Me> {
   const token = getAccessToken() ?? "";
   if (!cache || cache.token !== token) {
     const promise = apiRequest<ApiMe>("/users/me").then((me) => ({
+      id: me.id,
       name: me.full_name,
-      role: ROLE_LABELS[me.role] ?? me.role,
+      role: me.role_name,
       organization: me.organization_name,
       members: me.member_count,
+      permissions: me.permissions ?? [],
     }));
     promise.catch(() => {
       if (cache?.promise === promise) cache = null; // retry on next use

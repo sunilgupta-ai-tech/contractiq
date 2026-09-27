@@ -6,7 +6,7 @@ fields accumulate across nodes (their Annotated reducer is `operator.add`):
 `steps` (the timing trail shown in the UI) and `flags` (injection warnings).
 Every other field is simply overwritten by the node that returns it.
 
-Security: `tenant_id` and `role` are set once by the API layer from the
+Security: `tenant_id` and `permissions` are set once by the API layer from the
 signed token and are never written by any node. Tools read them from state
 (see tools/registry.py); a model's output can never change them, so the
 model cannot redirect a search to another tenant's data.
@@ -17,7 +17,7 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Literal, TypedDict
 
-from app.core.security import Role
+from app.core.security import Permission
 from app.guardrails.evidence_validator import GroundingReport
 from app.llm.base import LLMResult
 from app.rag.pipelines.qa import Step
@@ -33,7 +33,7 @@ class AgentState(TypedDict, total=False):
     # --- set by the API layer; read-only for every node ---
     question: str
     tenant_id: str
-    role: Role
+    permissions: frozenset[Permission]
     document_ids: list[str] | None
     version_ids: list[str] | None
     history: list[tuple[str, str]]

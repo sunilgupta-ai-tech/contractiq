@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.config import Settings
 from app.core.exceptions import FileTooLargeError, InvalidFileError
-from app.core.security import Role, create_token
+from app.core.security import SystemRole
 from app.main import create_app
 from app.services.document_service import (
     clean_filename,
@@ -15,6 +15,7 @@ from app.services.document_service import (
     read_limited,
     validate_pdf,
 )
+from tests.tokens import token_for
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -74,10 +75,7 @@ def test_default_title_from_filename():
 
 
 def _auth(settings, role):
-    token = create_token(
-        settings, subject=str(uuid.uuid4()), tenant_id=str(uuid.uuid4()), role=role
-    )
-    return {"Authorization": f"Bearer {token}"}
+    return {"Authorization": f"Bearer {token_for(settings, role)}"}
 
 
 async def test_oversized_request_rejected_before_body_is_read():
@@ -105,13 +103,13 @@ async def test_document_routes_require_a_token(client, method, path):
 async def test_viewers_cannot_upload(client, settings):
     response = await client.post(
         "/api/v1/documents/upload",
-        headers=_auth(settings, Role.VIEWER),
+        headers=_auth(settings, SystemRole.VIEWER),
         files={"file": ("msa.pdf", PDF, "application/pdf")},
     )
     assert response.status_code == 403
 
 
-@pytest.mark.parametrize("role", [Role.VIEWER, Role.ANALYST])
+@pytest.mark.parametrize("role", [SystemRole.VIEWER, SystemRole.EMPLOYEE])
 async def test_only_managers_and_admins_delete(client, settings, role):
     response = await client.delete(
         f"/api/v1/documents/{uuid.uuid4()}", headers=_auth(settings, role)

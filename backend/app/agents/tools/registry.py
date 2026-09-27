@@ -24,13 +24,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.logging import get_logger
-from app.core.security import Permission, Role, has_permission
+from app.core.security import Permission
 from app.guardrails.tool_guardrails import check_arguments
 
 logger = get_logger(__name__)
 
 # Arguments only the registry may supply.
-RESERVED_ARGS = frozenset({"tenant_id", "role"})
+RESERVED_ARGS = frozenset({"tenant_id", "role", "permissions"})
 
 ToolFunc = Callable[..., Awaitable[Any]]
 
@@ -61,13 +61,13 @@ class ToolRegistry:
         name: str,
         *,
         tenant_id: str,
-        role: Role,
+        permissions: frozenset[Permission],
         calls_so_far: int,
         arguments: dict[str, Any],
     ) -> Any:
         """Run tool `name` for this tenant, or raise ToolError.
 
-        `tenant_id`/`role` come from agent state (set by the API), never from
+        `tenant_id`/`permissions` come from agent state (set by the API), never from
         `arguments`.
         """
         tool = self._tools.get(name)
@@ -80,8 +80,8 @@ class ToolRegistry:
                 "tool_reserved_argument", extra={"tool": name, "arguments": sorted(forbidden)}
             )
             raise ToolError(f"Tool arguments may not set {sorted(forbidden)}")
-        if not has_permission(role, tool.permission):
-            raise ToolError(f"Role {role.value} may not use '{name}'")
+        if tool.permission not in permissions:
+            raise ToolError(f"Your role may not use '{name}'")
         if problem := check_arguments(name, arguments):  # Phase 11 argument limits
             logger.warning("tool_arguments_refused", extra={"tool": name, "problem": problem})
             raise ToolError(f"Refused '{name}': {problem}")

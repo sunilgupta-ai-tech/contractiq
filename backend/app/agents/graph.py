@@ -20,7 +20,7 @@ Guardrails (all enforced in code):
   * step limit     LangGraph recursion_limit, derived from the retry limit, so a
                    bug in an edge condition can never loop forever
   * time limit     AGENT_TIMEOUT_S for the whole run
-  * tenant safety  tenant_id/role live in state, set by the API; tools get them
+  * tenant safety  tenant_id/permissions live in state, set by the API; tools get them
                    from the registry, never from model output
 """
 
@@ -42,7 +42,7 @@ from app.agents.supervisor import AgentDeps
 from app.agents.tools.registry import Tool, ToolRegistry
 from app.core.config import Settings
 from app.core.logging import get_logger
-from app.core.security import Permission, Role
+from app.core.security import Permission
 from app.llm.base import LLMProvider
 from app.rag.pipelines.qa import NOT_FOUND_MESSAGE
 from app.rag.prompts.system import PROMPT_VERSION
@@ -163,7 +163,7 @@ class AgentRunner:
         question: str,
         *,
         tenant_id: str,
-        role: Role,
+        permissions: frozenset[Permission],
         document_ids: Sequence[str] | None = None,
         version_ids: Sequence[str] | None = None,
         history: list[tuple[str, str]] | None = None,
@@ -171,7 +171,7 @@ class AgentRunner:
         initial: AgentState = {
             "question": question,
             "tenant_id": tenant_id,
-            "role": role,
+            "permissions": permissions,
             "document_ids": list(document_ids) if document_ids else None,
             "version_ids": list(version_ids) if version_ids else None,
             "history": history or [],

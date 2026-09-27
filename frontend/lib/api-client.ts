@@ -143,6 +143,8 @@ function onUnauthorized(path: string): void {
 }
 
 export function parseEnvelope<T>(status: number, payload: unknown, acceptErrorData = false): T {
+  // 204 No Content (e.g. DELETE) has no envelope by design.
+  if (status === 204) return undefined as T;
   const env = payload as Envelope<T> | null;
   if (!env || typeof env !== "object" || !("success" in env)) {
     throw new ApiError("Unexpected response from server.", "BAD_RESPONSE", status, null);

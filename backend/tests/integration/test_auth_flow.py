@@ -25,7 +25,7 @@ def test_register_login_and_profile(api, cleanup):
     tokens, email = register(api, cleanup, "Org Alpha")
 
     me = api.get("/api/v1/users/me", headers=auth(tokens)).json()["data"]
-    assert me["email"] == email and me["role"] == "ADMIN"
+    assert me["email"] == email and me["role_name"] == "Admin"
     assert "password_hash" not in me
 
     login = api.post("/api/v1/auth/login", json={"email": email.upper(), "password": PASSWORD})
@@ -54,10 +54,14 @@ def test_admin_manages_users_and_roles_are_enforced(api, cleanup):
     created = api.post(
         "/api/v1/users",
         headers=auth(admin),
-        json={"email": viewer_email, "full_name": "Vic", "password": PASSWORD, "role": "VIEWER"},
+        json={"email": viewer_email, "full_name": "Vic", "password": PASSWORD},
     )
     assert created.status_code == 201, created.text
+    assert created.json()["data"]["role_name"] == "Viewer"  # the default role
     viewer_id = created.json()["data"]["id"]
+    roles = {
+        r["name"]: r["id"] for r in api.get("/api/v1/roles", headers=auth(admin)).json()["data"]
+    }
 
     users = api.get("/api/v1/users", headers=auth(admin)).json()["data"]
     assert users["total"] == 2
@@ -68,16 +72,17 @@ def test_admin_manages_users_and_roles_are_enforced(api, cleanup):
     assert api.get("/api/v1/users", headers=auth(viewer)).status_code == 403
 
     promoted = api.patch(
-        f"/api/v1/users/{viewer_id}", headers=auth(admin), json={"role": "ANALYST"}
+        f"/api/v1/users/{viewer_id}", headers=auth(admin), json={"role_id": roles["Employee"]}
     )
-    assert promoted.json()["data"]["role"] == "ANALYST"
+    assert promoted.json()["data"]["role_name"] == "Employee"
 
-    # Role changes reach the token at the next refresh.
+    # The old access token is revoked at once; refresh carries the new role.
+    assert api.get("/api/v1/users/me", headers=auth(viewer)).status_code == 401
     refreshed = api.post(
         "/api/v1/auth/refresh", json={"refresh_token": viewer["refresh_token"]}
     ).json()["data"]
     me = api.get("/api/v1/users/me", headers=auth(refreshed)).json()["data"]
-    assert me["role"] == "ANALYST"
+    assert me["role_name"] == "Employee"
 
     # A deactivated user can no longer sign in or refresh.
     api.patch(f"/api/v1/users/{viewer_id}", headers=auth(admin), json={"is_active": False})
@@ -93,7 +98,7 @@ def test_admin_cannot_see_or_touch_another_tenants_users(api, cleanup):
     user_b = api.get("/api/v1/users/me", headers=auth(admin_b)).json()["data"]
 
     response = api.patch(
-        f"/api/v1/users/{user_b['id']}", headers=auth(admin_a), json={"role": "VIEWER"}
+        f"/api/v1/users/{user_b['id']}", headers=auth(admin_a), json={"full_name": "Taken over"}
     )
     assert response.status_code == 404
     listed = api.get("/api/v1/users", headers=auth(admin_a)).json()["data"]["items"]
@@ -139,7 +144,7 @@ def test_me_includes_the_organization(api, cleanup):
     tokens, _ = register(api, cleanup, "Profile Org")
     me = api.get("/api/v1/users/me", headers=auth(tokens)).json()["data"]
     assert me["organization_name"] == "Profile Org" and me["member_count"] == 1
-    assert me["role"] == "ADMIN" and "password_hash" not in me
+    assert me["role_name"] == "Admin" and "password_hash" not in me
 
 
 def test_logout_revokes_the_refresh_token(api, cleanup):

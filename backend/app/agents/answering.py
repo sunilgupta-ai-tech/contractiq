@@ -39,7 +39,7 @@ async def context(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
         parents = await deps.tools.call(
             "get_sections",
             tenant_id=state["tenant_id"],
-            role=state["role"],
+            permissions=state["permissions"],
             calls_so_far=0,  # section lookups don't count against the search budget
             arguments={"parent_ids": parent_ids},
         )

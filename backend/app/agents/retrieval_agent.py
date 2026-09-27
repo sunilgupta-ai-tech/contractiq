@@ -60,7 +60,7 @@ async def retrieve(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
             hits = await deps.tools.call(
                 "search_contracts",
                 tenant_id=state["tenant_id"],
-                role=state["role"],
+                permissions=state["permissions"],
                 calls_so_far=calls,
                 arguments={
                     "question": query,

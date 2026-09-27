@@ -17,8 +17,9 @@ from app.agents.prompts import clean_queries, parse_json_object
 from app.agents.supervisor import needs_planning
 from app.agents.tools.registry import Tool, ToolError, ToolRegistry
 from app.core.config import Settings
-from app.core.security import Permission, Role
+from app.core.security import Permission, SystemRole
 from app.rag.reranker import HeuristicReranker
+from tests.tokens import perms
 from tests.unit.test_rag import FakeLLM, chunk
 
 NOTICE = chunk(1, clause="8.3", text="Notice must be given in writing to the registered office.")
@@ -51,7 +52,9 @@ def runner(retriever, llm, **settings):
 
 
 async def ask(agent, question, history=None):
-    return await agent.answer(question, tenant_id="tenant-1", role=Role.ANALYST, history=history)
+    return await agent.answer(
+        question, tenant_id="tenant-1", permissions=perms(SystemRole.EMPLOYEE), history=history
+    )
 
 
 def plan(standalone, subs, intent="qa"):
@@ -180,7 +183,11 @@ async def test_registry_injects_tenant_and_refuses_reserved_arguments():
     registry = ToolRegistry([Tool("t", "", Permission.QUERY_RUN, tool)], max_calls=2)
     assert (
         await registry.call(
-            "t", tenant_id="tenant-1", role=Role.VIEWER, calls_so_far=0, arguments={"x": 1}
+            "t",
+            tenant_id="tenant-1",
+            permissions=perms(SystemRole.VIEWER),
+            calls_so_far=0,
+            arguments={"x": 1},
         )
         == 1
     )
@@ -189,23 +196,35 @@ async def test_registry_injects_tenant_and_refuses_reserved_arguments():
         await registry.call(
             "t",
             tenant_id="tenant-1",
-            role=Role.VIEWER,
+            permissions=perms(SystemRole.VIEWER),
             calls_so_far=0,
             arguments={"x": 1, "tenant_id": "tenant-2"},  # e.g. injected via model output
         )
     with pytest.raises(ToolError, match="budget"):
         await registry.call(
-            "t", tenant_id="tenant-1", role=Role.VIEWER, calls_so_far=2, arguments={"x": 1}
+            "t",
+            tenant_id="tenant-1",
+            permissions=perms(SystemRole.VIEWER),
+            calls_so_far=2,
+            arguments={"x": 1},
         )
     with pytest.raises(ToolError, match="Unknown tool"):
-        await registry.call("rm", tenant_id="t", role=Role.ADMIN, calls_so_far=0, arguments={})
+        await registry.call(
+            "rm", tenant_id="t", permissions=perms(SystemRole.ADMIN), calls_so_far=0, arguments={}
+        )
 
 
 async def test_registry_checks_the_callers_permission():
     admin_only = Tool("manage", "", Permission.USER_MANAGE, lambda **_: asyncio.sleep(0))
     registry = ToolRegistry([admin_only], max_calls=5)
     with pytest.raises(ToolError, match="may not use"):
-        await registry.call("manage", tenant_id="t", role=Role.VIEWER, calls_so_far=0, arguments={})
+        await registry.call(
+            "manage",
+            tenant_id="t",
+            permissions=perms(SystemRole.VIEWER),
+            calls_so_far=0,
+            arguments={},
+        )
 
 
 async def test_tool_budget_limits_searches_but_still_answers():

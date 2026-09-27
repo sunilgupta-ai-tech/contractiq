@@ -34,7 +34,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from app.core.config import Settings
-from app.core.security import Role
+from app.core.security import SYSTEM_ROLE_PERMISSIONS, Permission, SystemRole
 from app.evaluation import retrieval_metrics as rm
 from app.evaluation.dataset import GoldenDataset, GoldenExample
 from app.evaluation.generation_metrics import AnswerScores, judge_answer, score_answer
@@ -90,7 +90,7 @@ class Evaluator:
         settings: Settings,
         mode: str = "fast",
         judge: LLMProvider | None = None,
-        role: Role = Role.ANALYST,
+        permissions: frozenset[Permission] = SYSTEM_ROLE_PERMISSIONS[SystemRole.EMPLOYEE],
     ) -> None:
         if mode not in ("fast", "agent"):
             raise ValueError("mode must be 'fast' or 'agent'")
@@ -100,7 +100,7 @@ class Evaluator:
         self.settings = settings
         self.mode = mode
         self.judge = judge
-        self.role = role
+        self.permissions = permissions
 
     async def run(
         self,
@@ -205,7 +205,10 @@ class Evaluator:
 
             runner = AgentRunner(self.retriever, self.reranker, self.llm, self.settings)
             return await runner.answer(
-                question, tenant_id=tenant_id, role=self.role, version_ids=[version_id]
+                question,
+                tenant_id=tenant_id,
+                permissions=self.permissions,
+                version_ids=[version_id],
             )
         pipeline = QAPipeline(self.retriever, self.reranker, self.llm, self.settings)
         return await pipeline.answer(question, tenant_id=tenant_id, version_ids=[version_id])

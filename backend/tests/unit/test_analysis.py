@@ -17,11 +17,12 @@ from app.agents.clause_topics import TOPICS, TOPICS_BY_KEY, coerce_attributes
 from app.agents.comparison_agent import DiffKind, align
 from app.agents.risk_agent import RiskAgent, Severity
 from app.core.config import Settings
-from app.core.security import Role, create_token
+from app.core.security import SystemRole
 from app.llm.base import LLMConfigError, LLMError
 from app.rag.reranker import NoopReranker
 from app.services.contract_service import ContractAnalyzer, VersionRef, key_dates, key_terms
 from app.storage.local import LocalObjectStorage
+from tests.tokens import token_for
 from tests.unit.test_rag import FakeLLM, chunk
 
 TENANT, DOC, VERSION = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
@@ -490,7 +491,7 @@ ENDPOINTS = [
 @pytest.mark.parametrize(("path", "body"), ENDPOINTS)
 async def test_analysis_needs_a_token_and_the_analysis_permission(client, settings, path, body):
     assert (await client.post(path, json=body)).status_code == 401
-    token = create_token(settings, subject=str(uuid.uuid4()), tenant_id=TENANT, role=Role.VIEWER)
+    token = token_for(settings, SystemRole.VIEWER, tenant_id=TENANT)
     response = await client.post(path, json=body, headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"

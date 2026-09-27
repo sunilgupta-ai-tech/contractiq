@@ -3,8 +3,9 @@
 Implemented in Phase 1:
 
 * Settings refuse unsafe production config (default JWT secret, wildcard CORS, S3 without bucket). Secrets are `SecretStr` and never appear in reprs or logs; log records redact secret-like keys.
-* bcrypt password hashing; JWTs carry `sub`, `tid` (tenant), `role`, `type`; refresh tokens rejected where access tokens are expected.
-* RBAC matrix (`ROLE_PERMISSIONS`) and `require_permission()` dependency.
+* bcrypt password hashing; JWTs carry `sub`, `tid` (tenant), `aud` (`docunexa:tenant`), `role`, `rid` (role id), `perms`, `ts`, `type`; refresh tokens rejected where access tokens are expected, and tokens for another audience (the platform admin API) are rejected.
+* **Roles and permissions (Phase 17).** The permission catalog is in code (`Permission`); roles are rows in `roles`: four built-in roles (Admin, Manager, Employee, Viewer) shared by every organization and locked, plus custom roles per organization. Every route checks a permission with `require_permission()`; the permissions come from the signed token. No escalation: a role can only contain permissions its author holds, nobody edits the role they hold, and nobody changes a user who has more access than they do. A role in use cannot be deleted.
+* **Immediate revocation.** Changing a user's role or active status, or a role's permissions, writes a "valid after" marker in Redis for the user or organization; every request compares the token's `ts` with it (one MGET) and a stale token gets 401, so the client refreshes and receives the current permissions (or is refused). If Redis is unreachable the check is skipped and logged; refresh still re-reads the database ([app/core/sessions.py](../backend/app/core/sessions.py)).
 * Tenant-scoped repositories; cross-tenant reads return `NOT_FOUND` (no ID probing). Tested against real Postgres.
 * **PostgreSQL row-level security (Phase 15)** as a second, independent layer. API requests and worker jobs bind their database session to the tenant in the signed token (or the job's row); every transaction then runs as the `app_tenant` role with `app.tenant_id` set, and the `tenant_isolation` policy on every table with `organization_id` (plus `organizations` itself) limits reads *and* writes to that tenant. A query that forgets its filter still returns only the caller's rows; a write into another tenant fails. Settings are transaction-local, so a pooled connection never carries one tenant into the next request, and with no tenant set the policies match nothing (fail closed). Sign-in, registration and token refresh run before a tenant is known and use the connection's own role. A test fails if a new tenant table is added without a policy ([app/db/tenancy.py](../backend/app/db/tenancy.py), migration `7c1d4e2a9b30`).
 * Mandatory Qdrant tenant filter; tenant-prefixed cache keys and S3 object keys.
@@ -18,9 +19,9 @@ Implemented in Phase 2:
 * Register / login / refresh endpoints. Passwords: at least 12 characters, at most 72 bytes (bcrypt's limit — rejected, never truncated).
 * Login failures are indistinguishable: unknown email, wrong password and disabled account/organization return the same 401, and unknown emails still pay for a bcrypt comparison so timing doesn't reveal which emails exist.
 * Refresh tokens are single-use: each `jti` is claimed atomically in Redis (key expires with the token). A replay returns 401. If Redis is unreachable, refresh fails closed with 503.
-* Refresh re-reads the user from Postgres, so role changes and deactivation take effect within one access-token lifetime (30 min by default). Access tokens themselves stay stateless.
-* User management is ADMIN-only and tenant-scoped; another organization's user IDs return `NOT_FOUND`. ADMINs cannot change their own role or active status (prevents locking an organization out).
-* Audit log entries for `auth.register`, `auth.login`, `auth.login_failed`, `user.create`, `user.update` — IDs, field names, role/status values and client IP only; never passwords, tokens or names.
+* Refresh re-reads the user, role and organization from Postgres, so a new token always carries current permissions.
+* User management needs `user:manage` and is tenant-scoped; another organization's user or custom-role IDs return `NOT_FOUND` (roles are also under row-level security: a tenant reads the system roles and its own). Nobody can change their own role or active status (prevents locking an organization out).
+* Audit log entries for `auth.register`, `auth.login`, `auth.login_failed`, `user.create`, `user.update`, `role.create`, `role.update`, `role.delete` — IDs, field names, role/status values and client IP only; never passwords, tokens or names.
 
 Implemented in Phase 3:
 
@@ -40,7 +41,7 @@ Implemented in Phase 4:
 
 Implemented in Phase 8:
 
-* Agent tools are reached only through a registry that checks each tool's permission against the caller's role, injects `tenant_id` itself (arguments may not set it), and enforces a per-question call budget, retry and step limits, and an overall timeout.
+* Agent tools are reached only through a registry that checks each tool's permission against the caller's permissions, injects `tenant_id` itself (arguments may not set it), and enforces a per-question call budget, retry and step limits, and an overall timeout.
 
 Implemented in Phase 11 (details in [guardrails.md](guardrails.md)):
 

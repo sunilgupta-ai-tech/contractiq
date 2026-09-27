@@ -12,6 +12,7 @@ import {
   type LibrarySort,
   type LibraryStatus,
 } from "@/services/document-service";
+import { can, useMe } from "@/lib/session";
 import type { FileType } from "@/types";
 import { cn } from "@/utils/cn";
 import { isProcessing } from "@/utils/format";
@@ -46,6 +47,7 @@ const SORTS: { key: LibrarySort; label: string }[] = [
  *  place, filtered, searched, sorted and paged on the server so it stays
  *  fast with thousands of documents. */
 export function DocumentsView() {
+  const me = useMe();
   const [fileType, setFileType] = useState<FileType | "ALL">("ALL");
   const [status, setStatus] = useState<LibraryStatus>("all");
   const [sort, setSort] = useState<LibrarySort>("newest");
@@ -100,7 +102,7 @@ export function DocumentsView() {
         description="Every file your organization has uploaded, in one place. Only members of your organization can see them."
       />
       <div className="space-y-5">
-        <UploadDropzone onUploaded={reload} />
+        {can(me, "document:upload") && <UploadDropzone onUploaded={reload} />}
         {list.error && <ErrorState error={list.error} onRetry={reload} />}
         <Card>
           <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
