@@ -2,46 +2,66 @@
 
 from __future__ import annotations
 
-import re
-from typing import Annotated, Literal
+from collections.abc import Callable
+from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, ValidationInfo, field_validator
+from pydantic_core import PydanticCustomError
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+from app.core import credentials
+from app.core.credentials import PASSWORD_MAX_BYTES, PASSWORD_MIN_CHARS, CredentialError
 
-# bcrypt only reads the first 72 bytes of a password. Longer inputs are
-# rejected here rather than silently truncated by the hasher.
-PASSWORD_MIN_CHARS = 12
-PASSWORD_MAX_BYTES = 72
-
-
-def _normalize_email(value: str) -> str:
-    """Emails are unique across the platform, so they are compared lower-cased."""
-    value = value.strip().lower()
-    if len(value) > 320 or not _EMAIL_RE.match(value):
-        raise ValueError("Enter a valid email address.")
-    return value
+__all__ = ["PASSWORD_MAX_BYTES", "PASSWORD_MIN_CHARS"]
 
 
-def _check_password(value: str) -> str:
-    if len(value) < PASSWORD_MIN_CHARS:
-        raise ValueError(f"Password must be at least {PASSWORD_MIN_CHARS} characters.")
-    if len(value.encode()) > PASSWORD_MAX_BYTES:
-        raise ValueError(f"Password must be at most {PASSWORD_MAX_BYTES} bytes.")
-    return value
+def _rule(check: Callable[[str], str]) -> Callable[[str], str]:
+    """Turn a credentials rule into a validator whose message is shown as is
+    (no "Value error, " prefix), so the frontend can put it under the field."""
+
+    def validate(value: str) -> str:
+        try:
+            return check(value)
+        except CredentialError as exc:
+            raise PydanticCustomError("invalid_input", str(exc)) from exc
+
+    return validate
 
 
-Email = Annotated[str, AfterValidator(_normalize_email)]
-NewPassword = Annotated[str, AfterValidator(_check_password)]
-FullName = Annotated[str, Field(min_length=1, max_length=200)]
+# Sign-in: normalised only, so accounts from before the stricter rules work.
+Email = Annotated[str, AfterValidator(_rule(credentials.normalize_email))]
+# New accounts, invitations and platform admins (see app/core/credentials.py).
+NewEmail = Annotated[str, AfterValidator(_rule(credentials.validate_new_email))]
+NewPassword = Annotated[
+    str, Field(max_length=256), AfterValidator(_rule(credentials.validate_new_password))
+]
+FullName = Annotated[
+    str, Field(max_length=400), AfterValidator(_rule(credentials.validate_full_name))
+]
+OrganizationName = Annotated[
+    str, Field(max_length=400), AfterValidator(_rule(credentials.validate_organization_name))
+]
 
 
-class RegisterRequest(BaseModel):
+class PersonalPasswordCheck(BaseModel):
+    """Mixin: the password must not contain the email, name or organization
+    given in the same request (fields declared before `password`)."""
+
+    @field_validator("password", check_fields=False)
+    @classmethod
+    def _not_personal(cls, value: str, info: ValidationInfo) -> str:
+        data: dict[str, Any] = info.data
+        personal = tuple(
+            str(data[k]) for k in ("email", "full_name", "organization_name") if data.get(k)
+        )
+        return _rule(lambda v: credentials.validate_new_password(v, personal=personal))(value)
+
+
+class RegisterRequest(PersonalPasswordCheck):
     """Self-service sign-up: creates an organization and its first ADMIN."""
 
-    organization_name: Annotated[str, Field(min_length=2, max_length=200)]
+    organization_name: OrganizationName
     full_name: FullName
-    email: Email
+    email: NewEmail
     password: NewPassword
 
 

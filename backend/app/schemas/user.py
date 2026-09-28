@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from app.core.security import PERMISSION_INFO, Permission
 from app.db.models import Role, User
-from app.schemas.auth import Email, FullName, NewPassword
+from app.schemas.auth import FullName, NewEmail, NewPassword, PersonalPasswordCheck
 
 
 class UserOut(BaseModel):
@@ -51,11 +51,11 @@ class MeOut(UserOut):
     permissions: list[Permission]
 
 
-class CreateUserRequest(BaseModel):
+class CreateUserRequest(PersonalPasswordCheck):
     """An admin adds a user to their own organization. Without `role_id`
     the user gets the Viewer role."""
 
-    email: Email
+    email: NewEmail
     full_name: FullName
     password: NewPassword
     role_id: uuid.UUID | None = None

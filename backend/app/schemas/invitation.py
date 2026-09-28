@@ -7,11 +7,11 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.schemas.auth import Email, FullName, NewPassword
+from app.schemas.auth import FullName, NewEmail, NewPassword, PersonalPasswordCheck
 
 
 class CreateInvitationRequest(BaseModel):
-    email: Email
+    email: NewEmail
     role_id: uuid.UUID
 
 
@@ -39,6 +39,6 @@ class InvitationPreview(BaseModel):
     expires_at: datetime
 
 
-class AcceptInvitationRequest(BaseModel):
+class AcceptInvitationRequest(PersonalPasswordCheck):
     full_name: FullName
     password: NewPassword

@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, Field, model_validator
 
 from app.db.models import FileType, OrganizationStatus, Plan, PlatformRole
-from app.schemas.auth import Email, FullName, NewPassword
+from app.schemas.auth import FullName, NewEmail, NewPassword, PersonalPasswordCheck
 from app.schemas.usage import UsagePeriodOut
 
 Limit = Annotated[int, Field(ge=0, le=100_000_000)]
@@ -34,8 +34,8 @@ class PlatformAdminOut(BaseModel):
     created_at: datetime
 
 
-class CreatePlatformAdminRequest(BaseModel):
-    email: Email
+class CreatePlatformAdminRequest(PersonalPasswordCheck):
+    email: NewEmail
     full_name: FullName
     password: NewPassword
     role: PlatformRole = PlatformRole.SUPPORT

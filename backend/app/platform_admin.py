@@ -23,17 +23,18 @@ import sys
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
+from app.core.credentials import CredentialError, validate_new_password
 from app.core.security import hash_password
 from app.db.database import Database
 from app.db.models import PlatformAdmin, PlatformAuditLog, PlatformRole
-from app.schemas.auth import PASSWORD_MAX_BYTES, PASSWORD_MIN_CHARS
 
 
-def _password() -> str:
+def _password(email: str, name: str) -> str:
     password = os.environ.get("PLATFORM_ADMIN_PASSWORD") or getpass.getpass("Password: ")
-    if len(password) < PASSWORD_MIN_CHARS or len(password.encode()) > PASSWORD_MAX_BYTES:
-        sys.exit(f"The password must be {PASSWORD_MIN_CHARS}-{PASSWORD_MAX_BYTES} characters.")
-    return password
+    try:
+        return validate_new_password(password, personal=(email, name))
+    except CredentialError as exc:
+        sys.exit(str(exc))
 
 
 async def _run(args: argparse.Namespace) -> None:
@@ -52,7 +53,7 @@ async def _run(args: argparse.Namespace) -> None:
                 admin = PlatformAdmin(
                     email=email,
                     full_name=args.name,
-                    password_hash=hash_password(_password()),
+                    password_hash=hash_password(_password(email, args.name)),
                     role=PlatformRole(args.role),
                 )
                 session.add(admin)
@@ -62,7 +63,7 @@ async def _run(args: argparse.Namespace) -> None:
                 if existing is None:
                     sys.exit(f"{email} is not a platform admin.")
                 admin = existing
-                admin.password_hash = hash_password(_password())
+                admin.password_hash = hash_password(_password(email, existing.full_name))
                 admin.is_active = True
                 action = "platform_admin.reset_password_cli"
             session.add(

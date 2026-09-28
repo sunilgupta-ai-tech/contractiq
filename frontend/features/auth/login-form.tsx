@@ -20,6 +20,17 @@ import {
 import { ErrorState } from "@/components/ui/states";
 import { ApiError, apiRequest, setSession } from "@/lib/api-client";
 import { config } from "@/lib/config";
+import {
+  fieldErrorsFromApi,
+  passwordChecks,
+  validateFullName,
+  validateNewEmail,
+  validateNewPassword,
+  validateOrganization,
+  validateSignInEmail,
+  validateSignInPassword,
+  PASSWORD_MIN,
+} from "@/utils/auth-validation";
 import { cn } from "@/utils/cn";
 
 interface TokenPair {
@@ -28,8 +39,10 @@ interface TokenPair {
 }
 
 type Mode = "signin" | "register";
+type FieldName = "full_name" | "organization_name" | "email" | "password";
 
-const MIN_PASSWORD = 12; // backend policy (app/schemas/auth.py)
+// Order in which invalid fields get focus on submit.
+const FIELD_ORDER: FieldName[] = ["full_name", "organization_name", "email", "password"];
 
 const COPY: Record<Mode, { title: string; subtitle: string; action: string }> = {
   signin: {
@@ -54,34 +67,83 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  // Field messages appear once a field was left (blur) or the form was
+  // submitted, never while someone is still typing their first characters.
+  const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Partial<Record<FieldName, string>>>({});
   const copy = COPY[mode];
-  const passwordLongEnough = password.length >= MIN_PASSWORD;
+  const register = mode === "register";
+  const personal = [email, fullName, organization];
+
+  const clientErrors: Partial<Record<FieldName, string | null>> = register
+    ? {
+        full_name: validateFullName(fullName),
+        organization_name: validateOrganization(organization),
+        email: validateNewEmail(email),
+        password: validateNewPassword(password, personal),
+      }
+    : { email: validateSignInEmail(email), password: validateSignInPassword(password) };
+
+  function shown(field: FieldName): string | null {
+    return serverErrors[field] ?? (touched[field] || submitted ? clientErrors[field] ?? null : null);
+  }
+
+  function edit(field: FieldName, set: (v: string) => void) {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      set(e.target.value);
+      if (serverErrors[field]) setServerErrors(({ [field]: _, ...rest }) => rest);
+    };
+  }
+
+  function leave(field: FieldName) {
+    return () => setTouched((t) => ({ ...t, [field]: true }));
+  }
 
   function switchMode(next: Mode) {
     setMode(next);
     setError(null);
+    setSubmitted(false);
+    setTouched({});
+    setServerErrors({});
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
+    setSubmitted(true);
     setError(null);
+    const firstInvalid = FIELD_ORDER.find((f) => clientErrors[f]);
+    if (firstInvalid) {
+      document.getElementById(`auth-${firstInvalid}`)?.focus();
+      return;
+    }
+    setLoading(true);
     try {
       if (!config.useDemoData) {
         // Phase 2: tokens should move to httpOnly cookies set by a BFF route
         // so they are never readable by page scripts.
-        const tokens =
-          mode === "signin"
-            ? await apiRequest<TokenPair>("/auth/login", { method: "POST", body: { email, password } })
-            : await apiRequest<TokenPair>("/auth/register", {
-                method: "POST",
-                body: { email, password, full_name: fullName, organization_name: organization },
-              });
+        const tokens = register
+          ? await apiRequest<TokenPair>("/auth/register", {
+              method: "POST",
+              body: {
+                email: email.trim(),
+                password,
+                full_name: fullName.trim(),
+                organization_name: organization.trim(),
+              },
+            })
+          : await apiRequest<TokenPair>("/auth/login", { method: "POST", body: { email: email.trim(), password } });
         setSession(tokens.access_token, tokens.refresh_token);
       }
       router.push("/");
     } catch (err) {
-      setError(err instanceof ApiError ? err : new ApiError("Sign-in failed.", "UNKNOWN", 0, null));
+      const fields = fieldErrorsFromApi(err) as Partial<Record<FieldName, string>>;
+      if (Object.keys(fields).length > 0) {
+        setServerErrors(fields);
+        document.getElementById(`auth-${FIELD_ORDER.find((f) => fields[f]) ?? "email"}`)?.focus();
+      } else {
+        setError(err instanceof ApiError ? err : new ApiError("Sign-in failed.", "UNKNOWN", 0, null));
+      }
     } finally {
       setLoading(false);
     }
@@ -118,55 +180,70 @@ export function LoginForm() {
           </div>
         )}
 
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} noValidate className="space-y-4">
           {error && <ErrorState error={error} />}
 
           {mode === "register" && (
             <>
               <Field
+                id="auth-full_name"
                 label="Your name"
                 icon={UserRound}
                 required
+                maxLength={200}
                 autoComplete="name"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={edit("full_name", setFullName)}
+                onBlur={leave("full_name")}
+                error={shown("full_name")}
                 placeholder="Priya Sharma"
               />
               <Field
+                id="auth-organization_name"
                 label="Organization"
                 icon={Building2}
                 required
-                minLength={2}
+                maxLength={200}
                 autoComplete="organization"
                 value={organization}
-                onChange={(e) => setOrganization(e.target.value)}
+                onChange={edit("organization_name", setOrganization)}
+                onBlur={leave("organization_name")}
+                error={shown("organization_name")}
                 placeholder="Acme Legal"
               />
             </>
           )}
 
           <Field
+            id="auth-email"
             label="Work email"
             icon={Mail}
             type="email"
             required
+            maxLength={254}
             autoComplete="email"
+            inputMode="email"
+            spellCheck={false}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={edit("email", setEmail)}
+            onBlur={leave("email")}
+            error={shown("email")}
             placeholder="you@company.com"
           />
 
           <div>
             <Field
+              id="auth-password"
               label="Password"
               icon={LockKeyhole}
               type={showPassword ? "text" : "password"}
               required
-              minLength={mode === "register" ? MIN_PASSWORD : undefined}
-              autoComplete={mode === "register" ? "new-password" : "current-password"}
+              autoComplete={register ? "new-password" : "current-password"}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === "register" ? `At least ${MIN_PASSWORD} characters` : "Your password"}
+              onChange={edit("password", setPassword)}
+              onBlur={leave("password")}
+              error={shown("password")}
+              placeholder={register ? `At least ${PASSWORD_MIN} characters` : "Your password"}
               trailing={
                 <button
                   type="button"
@@ -178,11 +255,8 @@ export function LoginForm() {
                 </button>
               }
             />
-            {mode === "register" ? (
-              <p className={cn("mt-2 flex items-center gap-1.5 text-2xs", passwordLongEnough ? "text-ok" : "text-ink-3")}>
-                <Check className={cn("h-3.5 w-3.5", !passwordLongEnough && "opacity-40")} />
-                {MIN_PASSWORD}+ characters · a passphrase is easiest to remember
-              </p>
+            {register ? (
+              <PasswordChecklist password={password} personal={personal} />
             ) : (
               <p className="mt-2 text-2xs text-ink-3">Forgot your password? Ask your organization&apos;s admin to reset it.</p>
             )}
@@ -218,20 +292,49 @@ export function LoginForm() {
   );
 }
 
+/** Live password rules; ticks turn green as each one is met. */
+export function PasswordChecklist({ password, personal }: { password: string; personal: (string | undefined)[] }) {
+  return (
+    <ul className="mt-2 space-y-1" aria-label="Password requirements">
+      {passwordChecks(password, personal).map((check) => (
+        <li key={check.id} className={cn("flex items-center gap-1.5 text-2xs", check.ok ? "text-ok" : "text-ink-3")}>
+          <Check className={cn("h-3.5 w-3.5 shrink-0", !check.ok && "opacity-40")} aria-hidden />
+          {check.label}
+          <span className="sr-only">{check.ok ? "(met)" : "(not met)"}</span>
+        </li>
+      ))}
+      <li className="text-2xs text-ink-3">A short phrase of a few words is easiest to remember.</li>
+    </ul>
+  );
+}
+
 interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
   icon: ComponentType<{ className?: string }>;
   trailing?: React.ReactNode;
+  /** Shown under the field, which is then marked invalid for screen readers. */
+  error?: string | null;
 }
 
-function Field({ label, icon: Icon, trailing, className, ...input }: FieldProps) {
+export function Field({ label, icon: Icon, trailing, className, error, id, ...input }: FieldProps) {
+  const messageId = id ? `${id}-error` : undefined;
   return (
-    <label className="block">
+    <label className="block" htmlFor={id}>
       <span className="mb-1.5 block text-[13px] font-medium text-ink">{label}</span>
-      <span className="group flex h-11 items-center gap-2.5 rounded-xl border border-line bg-sunken/60 px-3.5 transition focus-within:border-brand/60 focus-within:bg-surface focus-within:ring-4 focus-within:ring-brand/10">
-        <Icon className="h-4 w-4 shrink-0 text-ink-3 transition group-focus-within:text-brand" />
+      <span
+        className={cn(
+          "group flex h-11 items-center gap-2.5 rounded-xl border bg-sunken/60 px-3.5 transition focus-within:bg-surface focus-within:ring-4",
+          error
+            ? "border-danger/60 focus-within:border-danger/70 focus-within:ring-danger/10"
+            : "border-line focus-within:border-brand/60 focus-within:ring-brand/10",
+        )}
+      >
+        <Icon className={cn("h-4 w-4 shrink-0 transition", error ? "text-danger" : "text-ink-3 group-focus-within:text-brand")} />
         <input
           {...input}
+          id={id}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? messageId : undefined}
           className={cn(
             // The whole field shows focus (ring on the wrapper), not the bare input.
             "h-full w-full bg-transparent text-[14px] text-ink placeholder:text-ink-3 focus:outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0",
@@ -240,6 +343,11 @@ function Field({ label, icon: Icon, trailing, className, ...input }: FieldProps)
         />
         {trailing}
       </span>
+      {error && (
+        <span id={messageId} role="alert" className="mt-1.5 block text-2xs leading-4 text-danger">
+          {error}
+        </span>
+      )}
     </label>
   );
 }
