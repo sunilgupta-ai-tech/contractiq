@@ -45,3 +45,11 @@ docker-compose.override.yml
 
 # Phase 23: database dumps hold every organization's data — never commit them.
 backups/
+
+# Terraform: state holds generated passwords; tfvars hold environment values.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+.terraform.lock.hcl.bak

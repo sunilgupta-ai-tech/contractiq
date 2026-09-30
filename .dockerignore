@@ -1,0 +1,32 @@
+# Root build context is used by workers/Dockerfile, which only needs
+# backend/requirements.txt, backend/app and workers/app.
+
+# Secrets
+.env
+.env.*
+
+# VCS / tooling
+.git
+.github
+.gstack
+.vscode
+.idea
+**/.DS_Store
+
+# Python caches
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.venv
+
+# Not part of the worker image
+frontend
+infrastructure
+docs
+backups
+data
+storage
+eval-reports
+**/tests

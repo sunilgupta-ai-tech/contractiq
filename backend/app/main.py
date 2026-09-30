@@ -15,10 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.metrics import router as metrics_router
 from app.api.v1.router import api_router
-from app.core.config import Settings, get_settings
+from app.core.config import Environment, Settings, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
+from app.core.preflight import check_settings
 from app.core.resources import Resources
 from app.observability.tracing import configure_langsmith
 
@@ -35,6 +36,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resources = Resources.create(settings)
         app.state.resources = resources
         await resources.bootstrap()
+        if settings.app_env is not Environment.DEVELOPMENT:
+            # Phase 14: surface production-readiness problems in the startup logs.
+            for finding in check_settings(settings):
+                logger.warning("preflight", extra={"check": finding.check, "level": finding.level})
         logger.info(
             "startup", extra={"env": settings.app_env.value, "version": settings.app_version}
         )
