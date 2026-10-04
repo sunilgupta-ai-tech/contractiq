@@ -1,0 +1,76 @@
+# Render Blueprint (Phase 26): the DocuNexa AI backend for testing.
+#   API + worker in one free web service, Redis-compatible Key Value for the
+#   queue and caches. PostgreSQL is Neon, vectors are Qdrant Cloud, files are
+#   Cloudflare R2; the frontend runs on Vercel. Steps: docs/deploy-vercel-render.md
+#
+# Values marked `sync: false` are asked for once when the Blueprint is created
+# and are never stored in this file.
+services:
+  - type: keyvalue
+    name: docunexa-redis
+    plan: free
+    maxmemoryPolicy: noeviction # the job queue must not be evicted
+    ipAllowList: [] # reachable only from services in this Render account
+
+  - type: web
+    name: docunexa-api
+    runtime: docker
+    plan: free
+    branch: phase-9-multimodal
+    dockerfilePath: ./infrastructure/render/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: LOG_JSON
+        value: "true"
+      - key: CORS_ORIGINS
+        sync: false # the Vercel URL, e.g. https://docunexa.vercel.app
+      # Neon: the *direct* (non-pooled) connection, in asyncpg form:
+      # postgresql+asyncpg://USER:PASSWORD@HOST/DB?ssl=require
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: docunexa-redis
+          property: connectionString
+      - key: QDRANT_URL
+        sync: false # https://<cluster>.cloud.qdrant.io:6333
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: EMBEDDING_DIMENSION
+        value: "768"
+      # Cloudflare R2 (S3-compatible); the container's own disk is temporary.
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: AWS_REGION
+        value: auto
+      - key: AWS_S3_ENDPOINT_URL
+        sync: false # https://<account-id>.r2.cloudflarestorage.com
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: EMBEDDING_PROVIDER
+        value: gemini
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_THINKING_BUDGET
+        value: "0" # no hidden "thinking" tokens
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      # 512 MB instance: one document at a time, no separate metrics port.
+      - key: WORKER_MAX_JOBS
+        value: "1"
+      - key: WORKER_METRICS_PORT
+        value: "0"

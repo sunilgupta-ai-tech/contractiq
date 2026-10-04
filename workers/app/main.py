@@ -63,7 +63,7 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     queue_name = QUEUE_NAME
-    max_jobs = 4  # OCR/embedding are CPU/IO heavy; scale out with replicas
+    max_jobs = settings.worker_max_jobs  # OCR/embedding are heavy; scale out with replicas
     job_timeout = 60 * 30  # large scanned contracts can take a while
     max_tries = 3
     keep_result = 60 * 60 * 24

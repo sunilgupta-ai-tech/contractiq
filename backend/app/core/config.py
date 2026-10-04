@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     aws_s3_kms_key_id: str | None = None
     aws_access_key_id: SecretStr | None = None
     aws_secret_access_key: SecretStr | None = None
+    # Phase 26: an S3-compatible store instead of AWS S3, e.g. Cloudflare R2
+    # (https://<account>.r2.cloudflarestorage.com, AWS_REGION=auto). Empty = AWS.
+    aws_s3_endpoint_url: str | None = None
 
     # --- PDF processing (worker) ---
     # Hard ceiling checked before any page is read, so a pathological file
@@ -297,6 +300,9 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     metrics_token: SecretStr | None = None
     worker_metrics_port: int = 9101
+    # Jobs one worker runs at once. OCR and embedding are memory-heavy: use 1
+    # on small instances (e.g. 512 MB), more on bigger ones (Phase 26).
+    worker_max_jobs: int = 4
     # USD per million tokens by model name, for cost metrics; e.g.
     # {"gemini-2.5-flash": {"input_per_mtok": 0.30, "output_per_mtok": 2.50}}.
     # No built-in prices: take them from the provider's current price list.

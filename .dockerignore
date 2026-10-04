@@ -1,5 +1,6 @@
-# Root build context is used by workers/Dockerfile, which only needs
-# backend/requirements.txt, backend/app and workers/app.
+# Root build context is used by workers/Dockerfile (backend/requirements.txt,
+# backend/app, workers/app) and infrastructure/render/Dockerfile (also
+# backend/migrations, backend/alembic.ini and its start script).
 
 # Secrets
 .env
@@ -24,6 +25,7 @@
 # Not part of the worker image
 frontend
 infrastructure
+!infrastructure/render/start.sh
 docs
 backups
 data

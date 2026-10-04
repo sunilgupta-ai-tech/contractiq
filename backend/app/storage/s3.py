@@ -22,14 +22,23 @@ class S3ObjectStorage:
         assert settings.aws_s3_bucket, "AWS_S3_BUCKET is required for S3 storage"
         self.bucket = settings.aws_s3_bucket
         kwargs: dict[str, Any] = {"region_name": settings.aws_region}
+        if settings.aws_s3_endpoint_url:  # Phase 26: S3-compatible store (R2, MinIO)
+            kwargs["endpoint_url"] = settings.aws_s3_endpoint_url
         if settings.aws_access_key_id and settings.aws_secret_access_key:
             kwargs["aws_access_key_id"] = settings.aws_access_key_id.get_secret_value()
             kwargs["aws_secret_access_key"] = settings.aws_secret_access_key.get_secret_value()
         self._client = boto3.client("s3", **kwargs)
         # Phase 24: SSE-KMS with a customer-managed key when one is configured,
         # otherwise S3-managed AES-256. Objects are always encrypted at rest.
-        self.kms_key_id = settings.aws_s3_kms_key_id or None
-        self.sse = "aws:kms" if self.kms_key_id else "AES256"
+        # S3-compatible stores encrypt at rest themselves and may refuse AWS's
+        # encryption headers (R2 does), so none are sent to them.
+        self.kms_key_id = (
+            None if settings.aws_s3_endpoint_url else settings.aws_s3_kms_key_id or None
+        )
+        if settings.aws_s3_endpoint_url:
+            self.sse: str | None = None
+        else:
+            self.sse = "aws:kms" if self.kms_key_id else "AES256"
 
     async def put(self, key: str, data: bytes, content_type: str) -> None:
         await asyncio.to_thread(
@@ -52,7 +61,9 @@ class S3ObjectStorage:
         )
 
     def _extra_args(self, content_type: str) -> dict[str, str]:
-        args = {"ContentType": content_type, "ServerSideEncryption": self.sse}
+        args = {"ContentType": content_type}
+        if self.sse:
+            args["ServerSideEncryption"] = self.sse
         if self.kms_key_id:
             args["SSEKMSKeyId"] = self.kms_key_id
         return args
