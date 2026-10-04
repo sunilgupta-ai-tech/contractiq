@@ -70,6 +70,7 @@ async def reembed_tenant(ctx: dict[str, Any], tenant_id: str) -> dict[str, Any]:
             version_label=version.label,
             contract_type=document.contract_type.value,
             is_latest_version=document.current_version_id == version.id,
+            uploaded_at=version.created_at.isoformat() if version.created_at else None,
         )
         try:
             await embed_and_index(stage_ctx)

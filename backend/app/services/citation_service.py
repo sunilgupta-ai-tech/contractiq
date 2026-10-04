@@ -97,7 +97,20 @@ def _citation(index: int, block: EvidenceBlock) -> Citation:
         regions=chunk.regions,
         clauses=chunk.clauses,
         chunk_type=chunk.chunk_type,
+        also_found_in=_also_found_in(block),
     )
+
+
+def _also_found_in(block: EvidenceBlock) -> list[dict[str, str | None]]:
+    """Other documents holding the block's text (Phase 25), each once."""
+    shown = {m.document_id for m in block.matches}
+    found: list[dict[str, str | None]] = []
+    for match in block.matches:
+        for other in match.also_found_in:
+            if other["document_id"] not in shown:
+                shown.add(other["document_id"])
+                found.append(other)
+    return found
 
 
 def _cited_fraction(text: str) -> float:

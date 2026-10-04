@@ -75,6 +75,7 @@ export interface ApiCitation {
   clause: string | null;
   quote: string;
   score: number;
+  also_found_in?: { document_id: string; document_title: string | null }[];
 }
 
 export interface ApiQueryResponse {
@@ -261,6 +262,7 @@ export function toAnswer(r: ApiQueryResponse): QueryAnswer {
     clause: c.clause ?? "",
     quote: c.quote,
     score: c.score,
+    alsoFoundIn: (c.also_found_in ?? []).map((d) => ({ documentId: d.document_id, title: d.document_title || "Untitled document" })),
   }));
   const steps: AgentStep[] = r.steps.map((s) => ({
     key: s.key,

@@ -53,6 +53,7 @@ class IndexTarget:
     is_current: bool  # this version is the document's latest
     embedding_model: str  # "<provider>:<model>:<dimension>"
     chunker_version: int
+    uploaded_at: str | None = None  # version upload time (ISO 8601): newest wins ties
 
 
 def chunk_payload(chunk: Chunk, target: IndexTarget) -> dict[str, Any]:
@@ -70,6 +71,7 @@ def chunk_payload(chunk: Chunk, target: IndexTarget) -> dict[str, Any]:
         "document_title": target.document_title,
         "contract_type": target.contract_type,
         "is_current": target.is_current,
+        "uploaded_at": target.uploaded_at,
         # structure (filters + citations)
         "section": chunk.section,
         "section_title": chunk.section_title,

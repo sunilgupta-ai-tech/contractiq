@@ -216,6 +216,9 @@ class Settings(BaseSettings):
     retrieval_candidates: int = 20
     # Evidence chunks kept after reranking, i.e. what the answer may cite.
     rerank_top_n: int = 6
+    # Evidence chunks one document may take while other documents have relevant
+    # evidence; repeated text across documents is merged (Phase 25).
+    evidence_max_per_document: int = 3
     reranker: str = "heuristic"  # heuristic | none
     # Estimated-token budget for all evidence in the prompt (sections included).
     context_max_tokens: int = 6000

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { ArrowLeft, GitCompareArrows, History, Loader2, MessageSquareText, ScanSearch, ShieldAlert, Upload, Download, Fingerprint } from "lucide-react";
-import { personalDataText } from "@/utils/personal-data";
+import { personalDataLevel, personalDataText } from "@/utils/personal-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -15,13 +15,15 @@ import { ApiError } from "@/lib/api-client";
 import { config } from "@/lib/config";
 import { can, useMe } from "@/lib/session";
 import { documentService } from "@/services/document-service";
-import type { Clause } from "@/types";
+import type { Citation, Clause } from "@/types";
 import { cn } from "@/utils/cn";
 import { formatDate } from "@/utils/format";
 import { parseMarkdownTable } from "@/utils/markdown-table";
 import { ACCEPT_BY_FILE_TYPE } from "@/utils/validation";
 import { AccessCard } from "./access-card";
 import { fileTypeLabel } from "./file-type";
+import { DocumentChat } from "./document-chat";
+import { FileViewer } from "./file-viewer";
 
 /** A clause's text, or a real table when the clause is a table. */
 function ClauseText({ text }: { text: string }) {
@@ -58,6 +60,22 @@ export function ContractDetailView({ id }: { id: string }) {
   const [selected, setSelected] = useState<string>("c-8-3");
   const sections = useMemo(() => groupBySection(doc?.clauses ?? []), [doc]);
   const fileInput = useRef<HTMLInputElement>(null);
+  // The original file is shown first; clause links switch to the extracted text.
+  const [view, setView] = useState<"original" | "extracted">("original");
+  const [viewerPage, setViewerPage] = useState<number | undefined>(undefined);
+  // Chat beside the document; kept mounted after the first open so closing
+  // and reopening it keeps the conversation.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatStarted, setChatStarted] = useState(false);
+  function openChat() {
+    setChatOpen((open) => !open);
+    setChatStarted(true);
+  }
+  function focusClause(clauseId: string) {
+    setSelected(clauseId);
+    setView("extracted");
+    requestAnimationFrame(() => document.getElementById(clauseId)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<ApiError | null>(null);
 
@@ -82,6 +100,19 @@ export function ContractDetailView({ id }: { id: string }) {
     } finally {
       setUploading(false);
     }
+  }
+
+  /** A chat citation: a PDF opens at the cited page; otherwise the cited clause is shown. */
+  function showCitation(c: Citation) {
+    // On a phone the chat covers the page: close it so the cited spot is visible.
+    if (window.matchMedia("(max-width: 639px)").matches) setChatOpen(false);
+    if (doc?.fileType === "PDF" && c.page) {
+      setView("original");
+      setViewerPage(c.page);
+      return;
+    }
+    const clause = doc?.clauses.find((x) => x.number === c.clause);
+    if (clause) focusClause(clause.id);
   }
 
   if (error) return <ErrorState error={error} onRetry={reload} />;
@@ -140,9 +171,9 @@ export function ContractDetailView({ id }: { id: string }) {
               </Link>
             )}
             {can(me, "query:run") && (
-              <Link href={`/assistant?doc=${doc.id}`}>
-                <Button><MessageSquareText className="h-4 w-4" /> Ask this document</Button>
-              </Link>
+              <Button onClick={openChat} aria-expanded={chatOpen}>
+                <MessageSquareText className="h-4 w-4" /> {chatOpen ? "Hide chat" : "Ask this document"}
+              </Button>
             )}
           </div>
         </div>
@@ -172,7 +203,19 @@ export function ContractDetailView({ id }: { id: string }) {
           </span>
         </div>
       )}
-      {Object.keys(doc.personalData).length > 0 && (
+      {personalDataLevel(doc.personalData) === "sensitive" && (
+        <div role="alert" className="mb-5 flex items-start gap-2.5 rounded-xl border border-warn/30 bg-warn-soft px-4 py-3 text-[13px] text-ink">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+          <span>
+            <strong>Sensitive details found: {personalDataText(doc.personalData)}.</strong>{" "}
+            {doc.visibility === "ORGANIZATION"
+              ? "Everyone in your organization who can view documents can open this file and ask about it. Limit who can see it under Access if they don't all need it."
+              : "Access is limited to chosen people."}{" "}
+            Every download and question about it is recorded in the audit log.
+          </span>
+        </div>
+      )}
+      {personalDataLevel(doc.personalData) === "contact" && (
         <div role="note" className="mb-5 flex items-start gap-2.5 rounded-xl border border-brand/20 bg-brand-soft px-4 py-3 text-[13px] text-ink">
           <Fingerprint className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" />
           <span>
@@ -181,7 +224,12 @@ export function ContractDetailView({ id }: { id: string }) {
           </span>
         </div>
       )}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)_320px]">
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]",
+          chatOpen ? "xl:grid-cols-[240px_minmax(0,1fr)_400px]" : "2xl:grid-cols-[240px_minmax(0,1fr)_320px]",
+        )}
+      >
         {/* Outline */}
         <Card className="h-fit lg:sticky lg:top-20">
           <CardHeader eyebrow="Structure" title="Clauses" />
@@ -192,10 +240,7 @@ export function ContractDetailView({ id }: { id: string }) {
                 {clauses.map((c) => (
                   <button
                     key={c.id}
-                    onClick={() => {
-                      setSelected(c.id);
-                      document.getElementById(c.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
-                    }}
+                    onClick={() => focusClause(c.id)}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition",
                       selected === c.id ? "bg-brand-soft text-brand-ink" : "text-ink-2 hover:bg-sunken hover:text-ink",
@@ -211,7 +256,29 @@ export function ContractDetailView({ id }: { id: string }) {
           </nav>
         </Card>
 
-        {/* Paper view */}
+        <div className="min-w-0">
+        {sections.length > 0 && (
+          <div role="tablist" aria-label="Document view" className="mb-3 inline-flex gap-1 rounded-lg bg-sunken p-1">
+            {(["original", "extracted"] as const).map((v) => (
+              <button
+                key={v}
+                role="tab"
+                aria-selected={view === v}
+                onClick={() => setView(v)}
+                className={cn(
+                  "rounded-md px-3 py-1 text-[13px] font-medium transition",
+                  view === v ? "bg-surface text-ink shadow-card" : "text-ink-2 hover:text-ink",
+                )}
+              >
+                {v === "original" ? "Original file" : "Extracted text"}
+              </button>
+            ))}
+          </div>
+        )}
+        {view === "original" || sections.length === 0 ? (
+          <FileViewer doc={doc} page={viewerPage} />
+        ) : (
+        /* Paper view */
         <div className="rounded-2xl border border-line bg-sunken p-3 sm:p-6">
           <article className="mx-auto max-w-[720px] rounded-sm bg-[#FFFEFB] px-7 py-10 text-[#23252B] shadow-paper sm:px-14 sm:py-14 dark:bg-[#1B2029] dark:text-[#DADDE3]">
             <p className="text-center font-serif text-[13px] uppercase tracking-[0.25em] text-[#8A8577]">{doc.contractType} · {doc.version}</p>
@@ -241,9 +308,30 @@ export function ContractDetailView({ id }: { id: string }) {
             ))}
           </article>
         </div>
+        )}
+        </div>
 
         {/* Inspector */}
-        <div className="space-y-5 lg:col-span-2 2xl:col-span-1">
+        {/* Chat: a column beside the document on wide screens, a drawer below that.
+            While it is open the inspector steps aside so the viewer keeps its width. */}
+        {chatStarted && (
+          <div
+            className={cn(
+              "fixed inset-0 z-40 sm:left-auto sm:w-[420px] sm:border-l sm:border-line sm:shadow-lift xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:h-[calc(100vh-17rem)] xl:min-h-[480px] xl:w-auto xl:border-0 xl:shadow-none",
+              !chatOpen && "hidden",
+            )}
+          >
+            <DocumentChat
+              documentId={doc.id}
+              title={doc.title}
+              personalData={doc.personalData}
+              onClose={() => setChatOpen(false)}
+              onCite={showCitation}
+            />
+          </div>
+        )}
+
+        <div className={cn("space-y-5 lg:col-span-2 2xl:col-span-1", chatOpen && "xl:hidden")}>
           {!config.useDemoData && <AccessCard documentId={doc.id} />}
           <Card>
             <CardHeader eyebrow="Extracted" title="Key terms" />
@@ -268,7 +356,7 @@ export function ContractDetailView({ id }: { id: string }) {
                   <li key={f.id} className="text-[13px]">
                     <button
                       disabled={!f.clauseId}
-                      onClick={() => f.clauseId && setSelected(f.clauseId)}
+                      onClick={() => f.clauseId && focusClause(f.clauseId)}
                       className="flex w-full items-center gap-2 text-left font-medium text-ink enabled:hover:text-brand"
                     >
                       <span className={cn("h-2 w-2 shrink-0 rounded-full", riskDot[f.severity])} />
@@ -283,7 +371,7 @@ export function ContractDetailView({ id }: { id: string }) {
             <ul className="space-y-2 px-5 py-4">
               {doc.clauses.filter((c) => c.risk).map((c) => (
                 <li key={c.id}>
-                  <button onClick={() => setSelected(c.id)} className="flex w-full items-center gap-2 text-left text-[13px] text-ink-2 hover:text-ink">
+                  <button onClick={() => focusClause(c.id)} className="flex w-full items-center gap-2 text-left text-[13px] text-ink-2 hover:text-ink">
                     <span className={cn("h-2 w-2 rounded-full", riskDot[c.risk!])} />
                     <span className="font-mono text-2xs text-ink-3">{c.number}</span> {c.title}
                   </button>

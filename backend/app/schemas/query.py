@@ -58,6 +58,10 @@ class CitationOut(BaseModel):
     clauses: list[str] = Field(
         default_factory=list, description="Every clause number the cited text covers."
     )
+    also_found_in: list[dict[str, str | None]] = Field(
+        default_factory=list,
+        description="Other documents containing the same text (merged as repeated evidence).",
+    )
     chunk_type: str = Field(
         default="text",
         description="text | table | image_caption. An image_caption quote is a model-written "

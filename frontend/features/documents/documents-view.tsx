@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, FileSearch, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileSearch, Search, ShieldAlert, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState, ErrorState, Skeleton } from "@/components/ui/states";
@@ -16,6 +17,7 @@ import { can, useMe } from "@/lib/session";
 import type { FileType } from "@/types";
 import { cn } from "@/utils/cn";
 import { isProcessing } from "@/utils/format";
+import { personalDataLevel, sensitiveText } from "@/utils/personal-data";
 import { DocumentsTable } from "./documents-table";
 import { FILE_TYPE_META } from "./file-type";
 import { UploadDropzone } from "./upload-dropzone";
@@ -88,6 +90,18 @@ export function DocumentsView() {
     counts.reload();
   };
 
+  // Files uploaded on this page are watched until processed; any found to hold
+  // sensitive details are called out once, until dismissed.
+  const [uploadedIds, setUploadedIds] = useState<string[]>([]);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const sensitiveUploads = items.filter(
+    (d) =>
+      uploadedIds.includes(d.id) &&
+      !dismissed.includes(d.id) &&
+      d.status === "COMPLETED" &&
+      personalDataLevel(d.personalData) === "sensitive",
+  );
+
   // Keep processing documents' status current.
   useInterval(reload, items.some((d) => isProcessing(d.status)) ? 3000 : null);
 
@@ -103,7 +117,33 @@ export function DocumentsView() {
         description="Every file your organization has uploaded, in one place. Only members of your organization can see them."
       />
       <div className="space-y-5">
-        {can(me, "document:upload") && <UploadDropzone onUploaded={reload} />}
+        {can(me, "document:upload") && (
+          <UploadDropzone
+            onUploaded={(doc) => {
+              setUploadedIds((ids) => [...ids, doc.id]);
+              reload();
+            }}
+          />
+        )}
+        {sensitiveUploads.map((d) => (
+          <div key={d.id} role="alert" className="flex items-start gap-2.5 rounded-xl border border-warn/30 bg-warn-soft px-4 py-3 text-[13px] text-ink">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+            <span className="min-w-0 flex-1">
+              <strong>{d.title} contains sensitive details: {sensitiveText(d.personalData)}.</strong>{" "}
+              {d.visibility === "ORGANIZATION" ? "Everyone in your organization can open it. " : ""}
+              <Link href={`/documents/${d.id}`} className="font-medium text-brand hover:underline">
+                Review who can see it →
+              </Link>
+            </span>
+            <button
+              onClick={() => setDismissed((ids) => [...ids, d.id])}
+              aria-label={`Dismiss warning for ${d.title}`}
+              className="rounded p-0.5 text-ink-3 hover:text-ink"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
         {list.error && <ErrorState error={list.error} onRetry={reload} />}
         <Card>
           <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">

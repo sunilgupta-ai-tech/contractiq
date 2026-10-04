@@ -4,7 +4,8 @@ import { useState } from "react";
 import { ArrowUp, FileText, X } from "lucide-react";
 import { MAX_QUERY_LENGTH, validateQuestion } from "@/utils/validation";
 
-export function Composer({ disabled, scope, onClearScope, onSubmit }: { disabled: boolean; scope: string[]; onClearScope: (s: string) => void; onSubmit: (q: string) => void }) {
+/** Without `onClearScope` the scope is fixed (e.g. the chat beside one document). */
+export function Composer({ disabled, scope, onClearScope, onSubmit, placeholder }: { disabled: boolean; scope: string[]; onClearScope?: (s: string) => void; onSubmit: (q: string) => void; placeholder?: string }) {
   const [value, setValue] = useState("");
   const [hint, setHint] = useState<string | null>(null);
 
@@ -24,9 +25,11 @@ export function Composer({ disabled, scope, onClearScope, onSubmit }: { disabled
         {scope.map((s) => (
           <span key={s} className="inline-flex items-center gap-1 rounded-md bg-brand-soft px-2 py-0.5 text-2xs font-medium text-brand-ink">
             <FileText className="h-3 w-3" /> {s}
-            <button onClick={() => onClearScope(s)} aria-label={`Remove ${s}`}>
-              <X className="h-3 w-3" />
-            </button>
+            {onClearScope && (
+              <button onClick={() => onClearScope(s)} aria-label={`Remove ${s}`}>
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </span>
         ))}
       </div>
@@ -42,7 +45,7 @@ export function Composer({ disabled, scope, onClearScope, onSubmit }: { disabled
           }}
           rows={2}
           maxLength={MAX_QUERY_LENGTH}
-          placeholder="Ask about terms, obligations, risks or differences between versions…"
+          placeholder={placeholder ?? "Ask about terms, obligations, risks or differences between versions…"}
           className="max-h-40 min-h-[52px] flex-1 resize-none bg-transparent px-2 py-2 text-[14.5px] text-ink placeholder:text-ink-3 focus:outline-none"
         />
         <button

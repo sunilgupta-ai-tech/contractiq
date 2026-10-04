@@ -45,9 +45,9 @@ from app.document_processing.parser import (
 from app.document_processing.pymupdf_parser import open_pdf, to_page_image
 from app.document_processing.xlsx_parser import parse_xlsx
 from app.guardrails.prompt_injection import scan_for_injection
-from app.security.pii import pii_report
 from app.llm.base import embedding_model_label
 from app.multimodal.transcriber import PageToTranscribe, is_weak_ocr
+from app.security.pii import pii_report
 from app.services.chunking_service import (
     CHUNKER_VERSION,
     ChunkingOptions,
@@ -92,6 +92,7 @@ class StageContext:
     version_label: str = "v1"
     contract_type: str = "OTHER"
     is_latest_version: bool = True
+    uploaded_at: str | None = None  # version upload time (ISO 8601), copied to the index
     artifacts: dict[str, Any] = field(default_factory=dict)
     # Column name -> value, applied to the DocumentVersion row by the task.
     version_updates: dict[str, Any] = field(default_factory=dict)
@@ -473,6 +474,7 @@ async def _index(ctx: StageContext) -> None:
         is_current=ctx.is_latest_version,
         embedding_model=ctx.artifacts["embedding_model"],
         chunker_version=CHUNKER_VERSION,
+        uploaded_at=ctx.uploaded_at,
     )
     points = build_points(chunks.children, ctx.artifacts["vectors"], chunks.parents, target)
     written = await upsert_version(client, collection, target, points)

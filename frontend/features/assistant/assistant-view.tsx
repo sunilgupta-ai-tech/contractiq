@@ -11,6 +11,7 @@ import { queryService } from "@/services/query-service";
 import type { AgentStep, QueryAnswer } from "@/types";
 import { AgentTrace } from "./agent-trace";
 import { AnswerBody } from "./answer-body";
+import { AnswerSources } from "./answer-sources";
 import { Composer } from "./composer";
 import { EvidencePanel } from "./evidence-panel";
 
@@ -151,6 +152,7 @@ export function AssistantView() {
                 {turn.answer && (
                   <div className="card p-5">
                     <AnswerBody text={turn.answer.answer} active={focusTurn === i ? active : null} onCite={(n) => { setFocusTurn(i); setActive(n); }} />
+                    <AnswerSources citations={turn.answer.citations} active={focusTurn === i ? active : null} onCite={(n) => { setFocusTurn(i); setActive(n); }} />
                     <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-3 text-2xs text-ink-3">
                       <span className="inline-flex items-center gap-1"><Cpu className="h-3 w-3" /> {turn.answer.model}</span>
                       <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" /> {(turn.answer.latencyMs / 1000).toFixed(1)}s</span>

@@ -37,6 +37,12 @@ class RetrievedChunk:
     # Every clause number in the chunk. Small neighbouring clauses are merged
     # into one chunk (Phase 5), so `clause` is only the first of them.
     clauses: list[str] = field(default_factory=list)
+    # When the version was uploaded (ISO 8601); tie-break in evidence selection.
+    # None for chunks indexed before it was recorded.
+    uploaded_at: str | None = None
+    # Other documents holding the same text, merged into this chunk by
+    # evidence selection: [{"document_id", "document_title"}].
+    also_found_in: list[dict[str, str | None]] = field(default_factory=list)
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any], score: float) -> RetrievedChunk:
@@ -59,6 +65,7 @@ class RetrievedChunk:
             score=score,
             regions=payload.get("regions") or [],
             clauses=payload.get("clauses") or [],
+            uploaded_at=payload.get("uploaded_at"),
         )
 
 
@@ -101,3 +108,5 @@ class Citation:
     regions: list[dict[str, Any]] = field(default_factory=list)
     clauses: list[str] = field(default_factory=list)  # all clauses the cited text covers
     chunk_type: str = "text"  # text | table | image_caption (Phase 9)
+    # Other documents with the same text: [{"document_id", "document_title"}] (Phase 25).
+    also_found_in: list[dict[str, str | None]] = field(default_factory=list)

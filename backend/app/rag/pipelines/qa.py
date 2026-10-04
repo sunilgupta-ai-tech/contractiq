@@ -50,7 +50,8 @@ from app.rag.context import build_evidence
 from app.rag.prompts.system import INSUFFICIENT_EVIDENCE, PROMPT_VERSION, build_messages
 from app.rag.reranker import Reranker
 from app.rag.retriever import Retriever
-from app.rag.types import Citation, EvidenceBlock
+from app.rag.selection import select_evidence
+from app.rag.types import Citation, EvidenceBlock, RetrievedChunk
 from app.services.citation_service import resolve_citations
 
 logger = get_logger(__name__)
@@ -133,8 +134,15 @@ class QAPipeline:
 
         # 2. rerank
         started = time.perf_counter()
-        top = await self.reranker.rerank(question, candidates, self.settings.rerank_top_n)
-        steps.append(_step("rerank", "Rerank", f"top {len(top)} ({self.reranker.name})", started))
+        ranked = await self.reranker.rerank(question, candidates, len(candidates))
+        top, merged = select_evidence(
+            ranked,
+            self.settings.rerank_top_n,
+            max_per_document=self.settings.evidence_max_per_document,
+        )
+        steps.append(
+            _step("rerank", "Rerank", _rerank_detail(top, self.reranker.name, merged), started)
+        )
 
         # 3. context (small-to-big)
         started = time.perf_counter()
@@ -246,6 +254,13 @@ async def generate_answer(
             logger.warning("llm_retry")
             await sleep(1.0)
     raise AssertionError("unreachable")
+
+
+def _rerank_detail(top: list[RetrievedChunk], reranker: str, merged: int) -> str:
+    detail = f"top {len(top)} ({reranker})"
+    if merged:
+        detail += f", {merged} repeated passage{'s' if merged != 1 else ''} merged"
+    return detail
 
 
 def _step(key: str, label: str, detail: str, started: float, status: str = "done") -> Step:

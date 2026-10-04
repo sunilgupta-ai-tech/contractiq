@@ -12,6 +12,12 @@ it accordingly:
     email    e-mail address
     phone    Indian mobile (+91 / 0 optional, starts 6-9), or +<country code>
              international numbers
+    bank_account  9-18 digit account number, only when labelled ("A/c No.",
+             "Account number", "Acct") so invoice and order numbers don't match
+    passport Indian passport number (A1234567), only with "passport" just before it
+    upi      UPI ID on a known payment handle (name@okaxis, 98xxxxxx@ybl …)
+    secret   credentials: passwords written as "password: …", private keys,
+             and well-known API key formats (AWS, Google, GitHub, OpenAI, Slack)
 
 Only the number of *distinct* values per type is recorded, never the values
 themselves: the flag must not become a second copy of the data. The data
@@ -81,6 +87,28 @@ _CARD_PREFIX = re.compile(r"^(?:4|5[1-5]|2[2-7]|3[47]|6(?:011|5|4[4-9]|0|2))")
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")
 _PHONE_IN = re.compile(r"(?<![\w+])(?:\+91[ -]?|0)?[6-9]\d{4}[ -]?\d{5}(?!\d)")
 _PHONE_INTL = re.compile(r"(?<![\w+])\+[1-9]\d{0,2}(?:[ -]?\d{2,5}){2,4}(?!\d)")
+_BANK_ACCOUNT = re.compile(
+    r"(?i)\b(?:a/c|acct|account)\.?(?:\s*(?:no|number|num|#))?\.?\s*[:#-]?\s*"
+    r"(?P<value>\d(?:[ -]?\d){8,17})(?![\d-])"
+)
+_PASSPORT = re.compile(
+    r"(?i)\bpassport\b(?:\s*(?:no|number|num|#))?\.?\s*[:#-]?\s*"
+    r"(?P<value>(?-i:[A-PR-WY][1-9]\d ?\d{4}[1-9]))\b"
+)
+_UPI_HANDLES = (
+    "ybl|ibl|axl|apl|upi|paytm|okaxis|oksbi|okicici|okhdfcbank|ptyes|ptsbi|pthdfc|ptaxis"
+    "|axisbank|hdfcbank|icici|sbi|kotak|yesbank|freecharge|jupiteraxis|slc|waaxis|wahdfcbank"
+)
+_UPI = re.compile(rf"(?i)\b[a-z0-9][a-z0-9._-]{{1,255}}@(?:{_UPI_HANDLES})\b(?!\.[a-z])")
+_SECRET = re.compile(
+    r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----"
+    r"|\bAKIA[0-9A-Z]{16}\b"  # AWS access key id
+    r"|\bAIza[0-9A-Za-z_-]{35}\b"  # Google API key
+    r"|\bgh[pousr]_[A-Za-z0-9]{36}\b"  # GitHub token
+    r"|\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b"  # OpenAI-style secret key
+    r"|\bxox[abprs]-[A-Za-z0-9-]{10,}\b"  # Slack token
+    r"|(?i:\b(?:password|passwd|pwd)\s*[:=]\s*)(?P<value>\S{4,})"
+)
 
 
 def _aadhaar(match: re.Match[str]) -> str | None:
@@ -93,6 +121,16 @@ def _card(match: re.Match[str]) -> str | None:
     if 13 <= len(digits) <= 19 and _CARD_PREFIX.match(digits) and luhn_valid(digits):
         return digits
     return None
+
+
+def _value(match: re.Match[str]) -> str:
+    """The labelled part of a match ("A/c No. 1234…" → "1234…"), else the whole match."""
+    return match.groupdict().get("value") or match.group()
+
+
+def _bank_account(match: re.Match[str]) -> str | None:
+    digits = _digits(_value(match))
+    return digits if 9 <= len(digits) <= 18 else None
 
 
 def _phone(match: re.Match[str]) -> str | None:
@@ -109,10 +147,15 @@ class _Detector:
 
 # Order matters: each match is blanked out before the next detector runs,
 # so a card number is not also counted as a phone number.
+# Card and Aadhaar stay first: `mask_pii` masks DETECTORS[:2].
 DETECTORS = (
     _Detector("card", _CARD, _card),
     _Detector("aadhaar", _AADHAAR, _aadhaar),
+    _Detector("secret", _SECRET, _value),
+    _Detector("bank_account", _BANK_ACCOUNT, _bank_account),
+    _Detector("passport", _PASSPORT, lambda m: _value(m).replace(" ", "")),
     _Detector("pan", _PAN, lambda m: m.group()),
+    _Detector("upi", _UPI, lambda m: m.group().lower()),
     _Detector("email", _EMAIL, lambda m: m.group().lower()),
     _Detector("phone", _PHONE_IN, _phone),
     _Detector("phone", _PHONE_INTL, _phone),

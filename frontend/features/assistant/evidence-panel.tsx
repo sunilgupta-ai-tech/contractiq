@@ -18,7 +18,7 @@ export function EvidencePanel({ answer, active, onSelect }: { answer: QueryAnswe
       <div className="border-b border-line px-5 py-4">
         <p className="eyebrow mb-1">Evidence</p>
         <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold">{answer.citations.length} sources cited</h2>
+          <h2 className="text-[15px] font-semibold">{answer.citations.length} source{answer.citations.length === 1 ? "" : "s"} cited</h2>
           <span className="inline-flex items-center gap-1 rounded-md bg-ok-soft px-1.5 py-0.5 text-2xs font-semibold text-ok">
             <ShieldCheck className="h-3 w-3" /> {Math.round(answer.groundedness * 100)}% grounded
           </span>

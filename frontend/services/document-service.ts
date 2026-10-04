@@ -247,15 +247,21 @@ export const documentService = {
     return toDocument(result.document);
   },
 
-  /** Phase 22: download a version's original file (audited by the API). */
-  async download(documentId: string, versionId: string, filename: string): Promise<void> {
+  /** A version's original file as a Blob (the same audited endpoint as download). */
+  async file(documentId: string, versionId: string): Promise<Blob> {
     const url = `${config.apiBaseUrl}${config.apiPrefix}/documents/${encodeURIComponent(documentId)}/versions/${encodeURIComponent(versionId)}/download`;
     const get = () => fetch(url, { headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` } });
     let response = await get();
     if (response.status === 401 && (await refreshSession())) response = await get();
     if (!response.ok) throw new ApiError("The file could not be downloaded.", "DOWNLOAD_FAILED", response.status, null);
+    return response.blob();
+  },
+
+  /** Phase 22: download a version's original file (audited by the API). */
+  async download(documentId: string, versionId: string, filename: string): Promise<void> {
+    const blob = await documentService.file(documentId, versionId);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(await response.blob());
+    link.href = URL.createObjectURL(blob);
     link.download = filename;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 10_000);

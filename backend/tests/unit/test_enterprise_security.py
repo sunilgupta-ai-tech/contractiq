@@ -19,6 +19,8 @@ from app.security.pii import find_pii, luhn_valid, mask_pii, pii_report, verhoef
 
 AADHAAR = "234123412346"  # passes the Verhoeff check
 CARD = "4111 1111 1111 1111"  # Visa test number, passes Luhn
+# Built in two parts so secret scanners (gitleaks in CI) don't flag the test itself.
+KEY_HEADER = "-----BEGIN RSA " + "PRIVATE KEY-----"
 EICAR = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 
 
@@ -43,6 +45,13 @@ def test_checksums():
         ("Mobile +91 98765 43210", "phone", "9876543210"),
         ("Call 09876543210", "phone", "9876543210"),
         ("US office +1 415 555 0100", "phone", "4155550100"),
+        ("Bank A/c No. 0123 4567 8901 IFSC HDFC0001234", "bank_account", "012345678901"),
+        ("Account number: 50100234567890", "bank_account", "50100234567890"),
+        ("Passport No. K1234567 issued at Mumbai", "passport", "K1234567"),
+        ("Pay via UPI ravi.k@okaxis today", "upi", "ravi.k@okaxis"),
+        ("Login password: Tr0ub4dor&3", "secret", "Tr0ub4dor&3"),
+        ("aws key AKIAIOSFODNN7EXAMPLE", "secret", "AKIAIOSFODNN7EXAMPLE"),
+        (KEY_HEADER, "secret", KEY_HEADER),
     ],
 )
 def test_each_kind_is_found(text, kind, value):
@@ -57,10 +66,21 @@ def test_each_kind_is_found(text, kind, value):
         "Clause 12.3.4 applies; fees of 1,20,000 per annum",
         "Order ref 4111111111111112",  # fails Luhn
         "Account 12345678",
+        "Invoice 501002345678 for order 98123",  # long number, but not labelled as an account
+        "Passport photo and K1234567 reference",  # no number right after "passport"
+        "The password policy requires 12 characters",
     ],
 )
 def test_ordinary_contract_numbers_are_not_personal_data(text):
     assert find_pii(text) == {}
+
+
+def test_an_email_on_a_payment_domain_is_an_email_not_a_upi_id():
+    assert set(find_pii("Email ravi@okaxis.com")) == {"email"}
+
+
+def test_a_bank_account_is_not_also_counted_as_a_phone_number():
+    assert set(find_pii("A/c No. 9876543210")) == {"bank_account"}
 
 
 def test_a_card_is_not_also_counted_as_a_phone_number():

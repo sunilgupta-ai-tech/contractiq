@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { toDocument, type ApiDocument } from "@/lib/adapters";
-import { personalDataText } from "@/utils/personal-data";
+import { personalDataLevel, personalDataText, sensitiveText } from "@/utils/personal-data";
 
 const base: ApiDocument = {
   id: "d1",
@@ -46,6 +46,15 @@ describe("library adapters", () => {
     expect(doc.personalData).toEqual({ aadhaar: 2, email: 1 });
     expect(personalDataText(doc.personalData)).toBe("2 Aadhaar numbers, 1 email address");
     expect(toDocument(base).personalData).toEqual({});
+  });
+
+  it("rates personal data: IDs, money and credentials are sensitive; contact details are not", () => {
+    expect(personalDataLevel({})).toBeNull();
+    expect(personalDataLevel({ email: 2, phone: 1 })).toBe("contact");
+    expect(personalDataLevel({ email: 1, bank_account: 1 })).toBe("sensitive");
+    expect(personalDataLevel({ secret: 1 })).toBe("sensitive");
+    expect(sensitiveText({ email: 3, aadhaar: 1, secret: 2 })).toBe("1 Aadhaar number, 2 passwords or API keys");
+    expect(personalDataText({ upi: 1, passport: 2 })).toBe("1 UPI ID, 2 passport numbers");
   });
 
   it("treats documents from before file types as PDFs named by title", () => {

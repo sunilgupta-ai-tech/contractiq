@@ -123,6 +123,7 @@ async def process_document(ctx: dict[str, Any], job_id: str) -> dict[str, Any]:
             version_label=version.label,
             contract_type=document.contract_type.value,
             is_latest_version=is_latest,
+            uploaded_at=version.created_at.isoformat() if version.created_at else None,
         )
         timings: dict[str, float] = {}
         await _set_status(

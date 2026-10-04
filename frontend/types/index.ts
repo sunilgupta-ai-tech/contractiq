@@ -139,6 +139,8 @@ export interface Citation {
   clause: string;
   quote: string;
   score: number;
+  /** Phase 25: other documents with the same text (merged as repeated evidence). */
+  alsoFoundIn?: { documentId: string; title: string }[];
 }
 
 export type AgentStepStatus = "pending" | "running" | "done" | "retry";

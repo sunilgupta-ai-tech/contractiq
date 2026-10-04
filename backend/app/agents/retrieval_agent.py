@@ -26,7 +26,6 @@ unrelated.
 
 from __future__ import annotations
 
-import math
 import time
 from typing import Any
 
@@ -36,8 +35,9 @@ from app.agents.supervisor import AgentDeps
 from app.agents.tools.registry import ToolError
 from app.core.logging import get_logger
 from app.llm.base import ChatMessage, LLMError
-from app.rag.pipelines.qa import Step
+from app.rag.pipelines.qa import Step, _rerank_detail
 from app.rag.reranker import referenced_clauses
+from app.rag.selection import select_evidence
 from app.rag.types import RetrievedChunk
 from app.vectorstore.sparse import tokenize
 
@@ -92,22 +92,31 @@ async def rerank(state: AgentState, deps: AgentDeps) -> dict[str, Any]:
     queries = state.get("queries") or []
     candidates = state.get("candidates") or {}
     top_n = deps.settings.rerank_top_n
-    per_query = max(2, math.ceil(top_n / max(len(queries), 1)))
+    # Each query's full ranking, so evidence selection can look past repeated text.
     ranked_lists = [
-        await deps.reranker.rerank(query, list(candidates.get(query, [])), per_query)
+        await deps.reranker.rerank(
+            query, list(candidates.get(query, [])), len(candidates.get(query, []))
+        )
         for query in queries
     ]
     merged: list[RetrievedChunk] = []
     seen: set[str] = set()
-    for position in range(per_query):  # round-robin: best of each query first
+    # Round-robin: each query's best first. Places further down only matter when
+    # repeated text or one document's share leaves top_n slots free.
+    depth = max((len(r) for r in ranked_lists), default=0)
+    for position in range(depth):
         for ranked in ranked_lists:
             if position < len(ranked) and ranked[position].chunk_id not in seen:
                 seen.add(ranked[position].chunk_id)
                 merged.append(ranked[position])
-    merged = merged[:top_n]
+    top, repeated = select_evidence(
+        merged, top_n, max_per_document=deps.settings.evidence_max_per_document
+    )
     return {
-        "reranked": merged,
-        "steps": [_step("rerank", "Rerank", f"top {len(merged)} ({deps.reranker.name})", started)],
+        "reranked": top,
+        "steps": [
+            _step("rerank", "Rerank", _rerank_detail(top, deps.reranker.name, repeated), started)
+        ],
     }
 
 
