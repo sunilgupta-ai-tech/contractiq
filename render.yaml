@@ -28,7 +28,7 @@ services:
       - key: LOG_JSON
         value: "true"
       - key: CORS_ORIGINS
-        sync: false # the Vercel URL, e.g. https://docunexa.vercel.app
+        value: https://docunexa-pi.vercel.app # the Vercel production URL
       # Neon: the *direct* (non-pooled) connection, in asyncpg form:
       # postgresql+asyncpg://USER:PASSWORD@HOST/DB?ssl=require
       - key: DATABASE_URL
