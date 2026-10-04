@@ -9,6 +9,7 @@ services:
   - type: keyvalue
     name: docunexa-redis
     plan: free
+    region: ohio # same region as the Neon database (AWS us-east-2)
     maxmemoryPolicy: noeviction # the job queue must not be evicted
     ipAllowList: [] # reachable only from services in this Render account
 
@@ -16,6 +17,7 @@ services:
     name: docunexa-api
     runtime: docker
     plan: free
+    region: ohio # same region as the Neon database (AWS us-east-2)
     branch: phase-9-multimodal
     dockerfilePath: ./infrastructure/render/Dockerfile
     dockerContext: .
